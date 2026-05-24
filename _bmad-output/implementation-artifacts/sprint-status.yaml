@@ -1,0 +1,94 @@
+# generated: 2026-05-24
+# last_updated: 2026-05-24
+# project: 3.ThucTheNgay
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog -> in-progress: Automatically when first story is created (via create-story)
+#   - in-progress -> done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-05-24
+last_updated: 2026-05-24
+project: 3.ThucTheNgay
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  epic-1: in-progress
+  1-1-initialize-application-scaffold-and-quality-tooling: review
+  1-2-define-core-pydantic-models: backlog
+  1-3-load-and-validate-project-config: backlog
+  1-4-select-project-paths-in-setup-mode: backlog
+  1-5-create-and-manage-workspace-structure: backlog
+  1-6-persist-composition-status-and-review-state: backlog
+  1-7-persist-validation-summary-and-revalidation-state: backlog
+  epic-1-retrospective: optional
+  epic-2: backlog
+  2-1-scan-imagery-folder-and-extract-geotiff-metadata: backlog
+  2-2-match-imagery-to-enabled-target-boundaries: backlog
+  2-3-copy-matched-imagery-into-workspace-cache: backlog
+  2-4-create-target-date-composition-json-files: backlog
+  2-5-run-ingestion-as-progress-job: backlog
+  2-6-show-ingestion-summary-and-warnings: backlog
+  epic-2-retrospective: optional
+  epic-3: backlog
+  3-1-build-review-edit-layout-and-composition-tree: backlog
+  3-2-add-queue-filters-and-empty-states: backlog
+  3-3-implement-layer-stack-controls: backlog
+  3-4-implement-gis-editor-canvas-view-controls: backlog
+  3-5-implement-per-composition-grid-override-controls: backlog
+  3-6-implement-slide-preview-panel-with-debounced-updates: backlog
+  3-7-implement-review-action-bar-and-keyboard-workflow: backlog
+  epic-3-retrospective: optional
+  epic-4: backlog
+  4-1-define-validation-engine-and-issue-schema: backlog
+  4-2-validate-composition-readiness-rules: backlog
+  4-3-run-validation-on-select-include-and-export-preflight: backlog
+  4-4-surface-issues-in-tree-layer-ui-and-warnings-panel: backlog
+  4-5-implement-metadata-editor-for-capture-date-time-correction: backlog
+  4-6-confirm-cache-move-when-corrected-date-changes: backlog
+  epic-4-retrospective: optional
+  epic-5: backlog
+  5-1-build-shared-render-specification-from-composition-state: backlog
+  5-2-implement-raster-window-and-crs-transform-rendering-core: backlog
+  5-3-render-grid-and-map-background-without-mvp-extras: backlog
+  5-4-implement-two-stage-preview-rendering-jobs: backlog
+  5-5-implement-final-png-rendering-and-render-log: backlog
+  5-6-verify-preview-final-alignment-with-fixtures: backlog
+  epic-5-retrospective: optional
+  epic-6: backlog
+  6-1-load-target-specific-powerpoint-template-metadata: backlog
+  6-2-build-export-preflight-and-export-plan-ui: backlog
+  6-3-generate-final-renders-for-included-compositions: backlog
+  6-4-export-combined-pptx-from-target-specific-sample-slides: backlog
+  6-5-export-txt-report-lines: backlog
+  6-6-write-export-summary-and-trace-log: backlog
+  epic-6-retrospective: optional

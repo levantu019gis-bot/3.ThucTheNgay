@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GeoJSON Drawer</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <aside class="panel" aria-label="Công cụ vẽ GeoJSON">
+        <div class="brand">
+          <h1>GeoJSON Drawer</h1>
+          <p>Vẽ vùng trên nền ảnh vệ tinh Google và tải xuống GeoJSON.</p>
+        </div>
+
+        <section class="source-panel">
+          <span>Nền bản đồ</span>
+          <strong>Google Satellite</strong>
+        </section>
+
+        <section class="controls" aria-label="Điều khiển vẽ">
+          <button id="drawBtn" type="button">Bắt đầu vẽ</button>
+          <button id="finishBtn" type="button" disabled>Hoàn tất vùng</button>
+          <button id="undoPointBtn" type="button" disabled>Lùi điểm</button>
+          <button id="deleteLastBtn" type="button" disabled>Xóa vùng cuối</button>
+          <button id="clearBtn" type="button" disabled>Xóa tất cả</button>
+          <button id="downloadBtn" type="button" disabled>Tải GeoJSON</button>
+        </section>
+
+        <section class="stats" aria-live="polite">
+          <div>
+            <span>Vùng</span>
+            <strong id="polygonCount">0</strong>
+          </div>
+          <div>
+            <span>Điểm đang vẽ</span>
+            <strong id="pointCount">0</strong>
+          </div>
+        </section>
+
+        <p id="status" class="status">Bấm 'Bắt đầu vẽ', sau đó click lên bản đồ để thêm điểm.</p>
+      </aside>
+
+      <section class="map-wrap">
+        <div id="map" class="map" role="application" aria-label="Satellite map"></div>
+      </section>
+    </main>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>

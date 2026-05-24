@@ -1,0 +1,57 @@
+[project]
+name = "thucthengay"
+version = "0.1.0"
+description = "Desktop workflow for preparing satellite imagery reports."
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "PySide6>=6.7",
+    "pydantic>=2.7",
+    "rasterio>=1.3",
+    "shapely>=2.0",
+    "pyproj>=3.6",
+    "numpy>=1.26",
+    "Pillow>=10.0",
+    "python-pptx>=1.0",
+]
+
+[project.scripts]
+thucthengay = "thucthengay.app:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/thucthengay"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+exclude = [
+    ".venv",
+    ".ruff_cache",
+    ".pytest_cache",
+    "__pycache__",
+    "build",
+    "dist",
+    ".agents",
+    ".claude",
+    "_bmad",
+    "_bmad-output",
+    "scripts",
+    "webapp_geojson",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

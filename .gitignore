@@ -1,0 +1,13 @@
+.venv/
+.ruff_cache/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+build/
+dist/
+*.egg-info/
+.mypy_cache/
+.pyright/
+workspace-output/
+exports/
+*.log
