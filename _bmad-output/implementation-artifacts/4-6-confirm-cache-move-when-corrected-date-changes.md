@@ -1,6 +1,6 @@
 # Story 4.6: Confirm Cache Move When Corrected Date Changes
 
-Status: review
+Status: done
 
 <!-- Created from Epic 4 backlog context per project autonomous execution mandate. -->
 
@@ -49,6 +49,16 @@ so that manual metadata fixes do not silently move files or change composition g
   - [x] ReviewEditMode integration: same-date save uses update_layer_metadata; cross-date save invokes move_layer (mock the confirmation).
   - [x] Run full pytest + ruff check + smoke test.
 
+### Review Findings
+
+- [x] [Review][Patch] Destination read failures were treated as missing destination compositions [src/thucthengay/workspace/service.py:315]
+- [x] [Review][Patch] Cross-composition move bypassed nested ImageLayer validation [src/thucthengay/workspace/service.py:345]
+- [x] [Review][Patch] Existing destination identity/duplicate layer conflicts were not blocked [src/thucthengay/workspace/service.py:317]
+- [x] [Review][Patch] Source layer order was not normalized after removing the moved layer [src/thucthengay/workspace/service.py:357]
+- [x] [Review][Patch] Source write failure could leave a newly written destination unrolled back [src/thucthengay/workspace/service.py:382]
+- [x] [Review][Patch] Confirmation helper safe-default behavior lacked direct regression coverage [tests/unit/test_move_layer_date_change.py:512]
+- [x] [Review][Patch] Move failure UI needed explicit Vietnamese remediation text [src/thucthengay/editor/modes/review_edit_mode.py:687]
+
 ## Dev Notes
 
 - Follow `_bmad-output/project-context.md` for env/quality rules.
@@ -81,6 +91,12 @@ claude-sonnet-4-6
 - `conda run -n ttn-env pytest` — 166 passed.
 - `conda run -n ttn-env ruff check .` — All checks passed.
 - `PYTHONPATH=src conda run -n ttn-env python -m thucthengay --smoke` — App ready.
+- `conda run -n ttn-env uv run --no-sync pytest tests/unit/test_move_layer_date_change.py` — 17 passed.
+- `conda run -n ttn-env uv run --no-sync pytest tests/unit/test_move_layer_date_change.py tests/unit/test_metadata_editor.py tests/unit/test_review_edit_mode.py tests/unit/test_workspace_service.py` — 81 passed.
+- `conda run -n ttn-env uv run --no-sync ruff check src/thucthengay/workspace/service.py src/thucthengay/editor/modes/review_edit_mode.py tests/unit/test_move_layer_date_change.py` — All checks passed.
+- `conda run -n ttn-env uv run --no-sync pytest` — 207 passed.
+- `conda run -n ttn-env uv run --no-sync ruff check .` — All checks passed.
+- `conda run -n ttn-env uv run --no-sync python -m thucthengay --smoke` — App ready.
 
 ### Completion Notes List
 
@@ -89,6 +105,7 @@ claude-sonnet-4-6
 - Added `confirm_date_change_dialog()` helper using QMessageBox with Vietnamese text; default button = Cancel for safety.
 - `ReviewEditMode._apply_layer_metadata` now detects date changes that cross target-date grouping (`{target_id}__{YYYYMMDD}` differs from current). If detected, prompts via `_confirm_date_change` (overridable for tests) and dispatches to `move_layer_between_compositions`; otherwise falls through to `update_layer_metadata`.
 - 9 new tests in `test_move_layer_date_change.py`: workspace service (5) + ReviewEditMode integration (4).
+- Code review fixes: destination JSON corruption now blocks instead of being treated as missing, existing destination target/date and duplicate layer conflicts are rejected, moved layer metadata is revalidated through `ImageLayer.model_validate`, source/destination orders are normalized, source-write failure rolls destination back best-effort, move failures show remediation text, and confirm dialog safe-default behavior has direct tests.
 
 ### File List
 
@@ -104,3 +121,4 @@ claude-sonnet-4-6
 
 - 2026-05-25: Created story context from Epic 4 backlog and started implementation.
 - 2026-05-25: Implemented move_layer service + confirmation dialog + ReviewEditMode integration + 9 tests. Epic 4 complete.
+- 2026-05-25: Code review found 7 patch findings; all fixed and full gates pass. Story marked done.

@@ -1,6 +1,6 @@
 # Story 4.5: Implement Metadata Editor for Capture Date/Time Correction
 
-Status: review
+Status: done
 
 <!-- Created from Epic 4 backlog context per project autonomous execution mandate. -->
 
@@ -50,6 +50,12 @@ so that imagery without complete metadata can still produce valid slide time lab
   - [x] ReviewEditMode integration: open editor + save updates workspace.
   - [x] Run full pytest + ruff check + smoke test.
 
+### Review Findings
+
+- [x] [Review][Patch] Metadata editor allowed saving missing required date/time [src/thucthengay/editor/widgets/metadata_editor.py:173]
+- [x] [Review][Patch] WorkspaceService metadata update bypassed nested ImageLayer validation [src/thucthengay/workspace/service.py:260]
+- [x] [Review][Patch] ReviewEditMode metadata save caught only WorkspaceError [src/thucthengay/editor/modes/review_edit_mode.py:694]
+
 ## Dev Notes
 
 - Follow `_bmad-output/project-context.md` for env/quality rules.
@@ -82,15 +88,21 @@ claude-sonnet-4-6 (continued in plan mode)
 - `conda run -n ttn-env pytest` — 157 passed.
 - `conda run -n ttn-env ruff check .` — All checks passed.
 - `PYTHONPATH=src conda run -n ttn-env python -m thucthengay --smoke` — App ready.
+- `conda run -n ttn-env uv run --no-sync pytest tests/unit/test_metadata_editor.py tests/unit/test_move_layer_date_change.py tests/unit/test_review_edit_mode.py` — 49 passed.
+- `conda run -n ttn-env uv run --no-sync ruff check src/thucthengay/workspace/service.py src/thucthengay/editor/widgets/metadata_editor.py src/thucthengay/editor/modes/review_edit_mode.py tests/unit/test_metadata_editor.py` — All checks passed.
+- `conda run -n ttn-env uv run --no-sync pytest` — 199 passed.
+- `conda run -n ttn-env uv run --no-sync ruff check .` — All checks passed.
+- `conda run -n ttn-env uv run --no-sync python -m thucthengay --smoke` — App ready.
 
 ### Completion Notes List
 
 - Added `WorkspaceService.update_layer_metadata()` — atomic write + `_mark_composition_edit_stale`.
 - Created `MetadataEditorDialog` (QDialog): date/time/cloud fields with nullable checkboxes, Vietnamese validation, state pill.
-- On save: `metadata_source` set to MANUAL; `metadata_status` becomes VALID iff both date+time present, else NEEDS_MANUAL_CORRECTION.
+- On dialog save: `metadata_source` is set to MANUAL and `metadata_status` to VALID only after both date+time pass validation.
 - Wired "Sửa metadata" button into ReviewEditMode layer panel; opens dialog for current layer.
-- 12 new tests in `test_metadata_editor.py` covering workspace persistence + dialog UI behavior.
+- 14 tests in `test_metadata_editor.py` covering workspace persistence, service validation, and dialog UI behavior.
 - Scope guard respected: composition_id and target-date grouping unchanged in this story; Story 4.6 will add cache-move confirmation when date crosses target-date boundary.
+- Code review fixes: editor now requires both capture date and time before emitting save, service revalidates updated `ImageLayer` payloads, and metadata save UI catches validation/write exceptions.
 
 ### File List
 
@@ -106,3 +118,4 @@ claude-sonnet-4-6 (continued in plan mode)
 
 - 2026-05-25: Created story context from Epic 4 backlog and started implementation.
 - 2026-05-25: Implemented WorkspaceService method + MetadataEditorDialog + ReviewEditMode integration + 12 tests. All gates pass.
+- 2026-05-25: Code review found 3 patch findings; all fixed and targeted gates pass. Story marked done.

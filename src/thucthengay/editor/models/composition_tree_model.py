@@ -130,6 +130,13 @@ class CompositionTreeModel(QAbstractItemModel):
                     return self.index(composition_row, 0, target_index)
         return QModelIndex()
 
+    def index_for_target_id(self, target_id: str) -> QModelIndex:
+        """Return the model index for a visible target id, otherwise an invalid index."""
+        for target_row, target_node in enumerate(self._root.children):
+            if target_node.target_id == target_id:
+                return self.index(target_row, 0)
+        return QModelIndex()
+
     def _rebuild_tree(self) -> None:
         self._root = _TreeNode(kind=None, label="root")
         target_lookup = {target.id: target for target in self._targets}

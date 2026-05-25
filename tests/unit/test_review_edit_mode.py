@@ -319,6 +319,54 @@ def test_review_edit_selection_persists_compact_validation_summary_only(
     assert "issues" not in raw
 
 
+def test_review_edit_suppressed_selection_refresh_does_not_run_validation(
+    tmp_path: Path,
+) -> None:
+    qapp()
+    service = WorkspaceService(tmp_path / "workspace")
+    service.initialize(config_path="config.json")
+    service.write_composition(
+        composition("alpha__20260525", "alpha", date(2026, 5, 25), needs_revalidation=False)
+    )
+
+    mode = ReviewEditMode()
+    mode.load_workspace(service, targets=[target_config("alpha", sort_order=1, name="Alpha")])
+    target_index = mode.tree_model.index(0, 0)
+    composition_index = mode.tree_model.index(0, 0, target_index)
+
+    def fail_validation(_composition: Composition) -> None:
+        raise AssertionError("validation should be suppressed")
+
+    mode._review_gate = fail_validation  # type: ignore[method-assign]
+    mode._suppress_selection_validation = True
+    mode._select_composition_index(composition_index, None)
+
+    assert mode.selected_composition is not None
+    assert mode.selected_composition.composition_id == "alpha__20260525"
+
+
+def test_review_edit_invalid_fallback_map_frame_becomes_validation_issue(
+    tmp_path: Path,
+) -> None:
+    qapp()
+    service = WorkspaceService(tmp_path / "workspace")
+    service.initialize(config_path="config.json")
+    service.write_composition(
+        composition("alpha__20260525", "alpha", date(2026, 5, 25), needs_revalidation=False)
+    )
+    target = target_config("alpha", sort_order=1, name="Alpha").model_copy(
+        update={"metadata": {"map_frame": {"width": 0, "height": 3}}}
+    )
+
+    mode = ReviewEditMode()
+    mode.load_workspace(service, targets=[target])
+    target_index = mode.tree_model.index(0, 0)
+    mode.tree_view.setCurrentIndex(mode.tree_model.index(0, 0, target_index))
+
+    assert mode.warnings_panel._list.count() == 1
+    assert "Template metadata" in mode.warnings_panel._list.item(0).text()
+
+
 def test_layer_stack_model_display_roles_and_no_visible_warning() -> None:
     qapp()
     long_name = "alpha_target_layer_with_a_very_long_filename_that_should_elide_20260525.tif"
@@ -985,9 +1033,11 @@ def test_review_edit_action_bar_blocks_include_and_supports_skip_previous(
     assert unchanged.ready is False
     assert unchanged.include is False
     assert mode.warnings_panel._list.count() > 0
+    assert mode.action_summary.text() == "Không include: cần xử lý lỗi blocking trước."
     assert mode.tree_model.composition_id_for_index(mode.tree_view.currentIndex()) == (
         "alpha__20260525"
     )
+    assert mode.tree_view.currentIndex().data(CompositionTreeRole.ISSUE_COUNT) > 0
 
     mode.skip_button.click()
 
@@ -1008,6 +1058,61 @@ def test_review_edit_action_bar_blocks_include_and_supports_skip_previous(
     assert mode.tree_model.composition_id_for_index(mode.tree_view.currentIndex()) == (
         "alpha__20260525"
     )
+
+
+def test_review_edit_issue_jump_handles_filtered_composition_and_target_only_refs(
+    tmp_path: Path,
+) -> None:
+    qapp()
+    service = WorkspaceService(tmp_path / "workspace")
+    service.initialize(config_path="config.json")
+    service.write_composition(
+        composition("alpha__20260525", "alpha", date(2026, 5, 25), needs_revalidation=False)
+    )
+
+    mode = ReviewEditMode()
+    mode.load_workspace(
+        service,
+        targets=[target_config("alpha", sort_order=1, name="Alpha Target")],
+    )
+    mode.tree_model.set_queue_filter(QueueFilter.READY)
+    mode._refresh_filter_controls()
+    assert not mode.tree_model.has_visible_compositions()
+
+    mode._handle_issue_jump("alpha", "alpha__20260525", "")
+
+    assert mode.tree_model.active_queue_filter == QueueFilter.ALL
+    assert mode.tree_model.composition_id_for_index(mode.tree_view.currentIndex()) == (
+        "alpha__20260525"
+    )
+
+    mode._handle_issue_jump("alpha", "", "")
+
+    assert mode.tree_view.currentIndex().data(CompositionTreeRole.TARGET_ID) == "alpha"
+
+
+def test_review_edit_issue_jump_reports_stale_missing_layer(
+    tmp_path: Path,
+) -> None:
+    qapp()
+    service = WorkspaceService(tmp_path / "workspace")
+    service.initialize(config_path="config.json")
+    service.write_composition(
+        composition("alpha__20260525", "alpha", date(2026, 5, 25), needs_revalidation=False)
+    )
+
+    mode = ReviewEditMode()
+    mode.load_workspace(
+        service,
+        targets=[target_config("alpha", sort_order=1, name="Alpha Target")],
+    )
+    target_index = mode.tree_model.index(0, 0)
+    mode.tree_view.setCurrentIndex(mode.tree_model.index(0, 0, target_index))
+    mode.action_summary.setText("before")
+
+    mode._handle_issue_jump("alpha", "alpha__20260525", "missing-layer")
+
+    assert mode.action_summary.text() == "Tham chiếu không còn tồn tại."
 
 
 def test_review_edit_revalidate_clears_stale_error_summary_with_lightweight_gate(

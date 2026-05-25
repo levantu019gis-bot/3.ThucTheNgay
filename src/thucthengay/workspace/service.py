@@ -251,23 +251,26 @@ class WorkspaceService:
         metadata_status: MetadataStatus,
     ) -> Composition:
         """Persist manual layer metadata correction and mark composition stale."""
+        if capture_date is None and capture_time is not None:
+            msg = "Cần nhập ngày chụp khi đã có giờ chụp."
+            raise WorkspaceError(msg)
+
+        metadata_updates = {
+            "capture_date": capture_date,
+            "capture_time": capture_time,
+            "cloud_percent": cloud_percent,
+            "metadata_source": metadata_source,
+            "metadata_status": metadata_status,
+        }
         composition = self.read_composition(composition_id)
         found = False
         updated_layers: list[ImageLayer] = []
         for layer in composition.layers:
             if layer.layer_id == layer_id:
                 found = True
-                updated_layers.append(
-                    layer.model_copy(
-                        update={
-                            "capture_date": capture_date,
-                            "capture_time": capture_time,
-                            "cloud_percent": cloud_percent,
-                            "metadata_source": metadata_source,
-                            "metadata_status": metadata_status,
-                        }
-                    )
-                )
+                layer_data = layer.model_dump(mode="python")
+                layer_data.update(metadata_updates)
+                updated_layers.append(ImageLayer.model_validate(layer_data))
             else:
                 updated_layers.append(layer)
 
@@ -312,9 +315,20 @@ class WorkspaceService:
             msg = f"Layer not found in composition {source_composition_id}: {layer_id}"
             raise WorkspaceError(msg)
 
-        try:
+        destination_path = self.paths.composition_file(new_composition_id)
+        destination_existed = destination_path.exists()
+        if destination_existed:
             destination = self.read_composition(new_composition_id)
-        except WorkspaceError:
+            if (
+                destination.target_id != new_target_id
+                or destination.capture_date != new_capture_date
+            ):
+                msg = (
+                    f"Composition đích {new_composition_id} không khớp target/ngày "
+                    "đang lưu. Vui lòng kiểm tra workspace trước khi đổi ngày."
+                )
+                raise WorkspaceError(msg)
+        else:
             destination = Composition(
                 composition_id=new_composition_id,
                 target_id=new_target_id,
@@ -324,8 +338,16 @@ class WorkspaceService:
             )
 
         dest_layers = list(destination.layers)
-        updated_layer = moved_layer.model_copy(
-            update={
+        if any(layer.layer_id == layer_id for layer in dest_layers):
+            msg = (
+                f"Composition đích {new_composition_id} đã có layer {layer_id}. "
+                "Vui lòng kiểm tra workspace trước khi đổi ngày."
+            )
+            raise WorkspaceError(msg)
+
+        layer_data = moved_layer.model_dump(mode="python")
+        layer_data.update(
+            {
                 "capture_date": new_capture_date,
                 "capture_time": capture_time,
                 "cloud_percent": cloud_percent,
@@ -334,12 +356,25 @@ class WorkspaceService:
                 "order": len(dest_layers),
             }
         )
+        try:
+            updated_layer = ImageLayer.model_validate(layer_data)
+        except ValidationError as error:
+            msg = f"Metadata layer không hợp lệ: {error}"
+            raise WorkspaceError(msg) from error
         dest_layers.append(updated_layer)
+        normalized_dest_layers = [
+            layer.model_copy(update={"order": order})
+            for order, layer in enumerate(dest_layers)
+        ]
+        normalized_source_layers = [
+            layer.model_copy(update={"order": order})
+            for order, layer in enumerate(remaining_layers)
+        ]
         updated_destination = _mark_composition_edit_stale(
-            _validated_composition_update(destination, {"layers": dest_layers})
+            _validated_composition_update(destination, {"layers": normalized_dest_layers})
         )
         updated_source = _mark_composition_edit_stale(
-            _validated_composition_update(source, {"layers": remaining_layers})
+            _validated_composition_update(source, {"layers": normalized_source_layers})
         )
 
         try:
@@ -354,14 +389,41 @@ class WorkspaceService:
         try:
             self.write_composition(updated_source)
         except (WorkspaceError, OSError, ValueError) as error:
+            rollback_error = self._rollback_destination_after_failed_move(
+                new_composition_id,
+                destination if destination_existed else None,
+            )
+            rollback_note = (
+                " Đã khôi phục composition đích."
+                if rollback_error is None
+                else f" Không thể tự khôi phục composition đích: {rollback_error}."
+            )
             msg = (
                 f"Đã ghi composition đích nhưng không cập nhật được nguồn "
-                f"{source_composition_id}: {error}. Vui lòng kiểm tra workspace; "
-                f"layer hiện tồn tại ở cả hai composition cho đến khi sửa thủ công."
+                f"{source_composition_id}: {error}.{rollback_note} "
+                "Vui lòng kiểm tra workspace rồi thử lại."
             )
             raise WorkspaceError(msg) from error
 
         return updated_source, updated_destination
+
+    def _rollback_destination_after_failed_move(
+        self,
+        composition_id: str,
+        original_destination: Composition | None,
+    ) -> str | None:
+        try:
+            if original_destination is not None:
+                self.write_composition(original_destination)
+            else:
+                self.paths.composition_file(composition_id).unlink(missing_ok=True)
+                manifest = self.load_manifest()
+                if composition_id in manifest.composition_ids:
+                    manifest.composition_ids.remove(composition_id)
+                    self.write_manifest(manifest)
+        except (WorkspaceError, OSError, ValueError) as error:
+            return str(error)
+        return None
 
     def reorder_layers(
         self,

@@ -1,6 +1,6 @@
 # Story 4.4: Surface Issues in Tree, Layer UI, and Warnings Panel
 
-Status: review
+Status: done
 
 <!-- Created from Epic 4 backlog context per project autonomous execution mandate. -->
 
@@ -56,6 +56,17 @@ so that I can jump from a warning or error to the related target, composition, o
   - [x] Test: stale composition_id jump sets explanatory action_summary text.
   - [x] Run full pytest + ruff check + smoke test.
 
+### Review Findings
+
+- [x] [Review][Patch] Mojibake-corrupted Vietnamese UI strings in Review/Edit mode [src/thucthengay/editor/modes/review_edit_mode.py:94]
+- [x] [Review][Patch] Suppressed selection refresh still runs validation gate [src/thucthengay/editor/modes/review_edit_mode.py:397]
+- [x] [Review][Patch] Failed validation summary is saved without refreshing tree/filter projection [src/thucthengay/editor/modes/review_edit_mode.py:443]
+- [x] [Review][Patch] Blocking Include/Validate message is overwritten by ready-state text [src/thucthengay/editor/modes/review_edit_mode.py:450]
+- [x] [Review][Patch] Invalid fallback map_frame metadata can crash validation instead of becoming an issue [src/thucthengay/editor/modes/review_edit_mode.py:541]
+- [x] [Review][Patch] Issue jump treats filtered-out compositions as stale references [src/thucthengay/editor/modes/review_edit_mode.py:580]
+- [x] [Review][Patch] Missing or stale layer references are not explained during issue jump [src/thucthengay/editor/modes/review_edit_mode.py:592]
+- [x] [Review][Patch] Warning rows do not show an explicit visible jump action label [src/thucthengay/editor/widgets/warnings_panel.py:76]
+
 ## Dev Notes
 
 - Follow `_bmad-output/project-context.md` before all implementation.
@@ -104,6 +115,8 @@ claude-sonnet-4-6
 - Added `_handle_issue_jump()` and `_select_layer_by_id()` for navigation from Warnings panel.
 - Tree model indicators (DecorationRole + ISSUE_COUNT + SEVERITY_TEXT) already complete from prior stories — confirmed with 5 focused tests.
 - 22 new tests in `test_warnings_panel_and_issue_ui.py`; updated 3 existing tests in `test_review_edit_mode.py`.
+- Code review fixes applied: restored corrupted Vietnamese UI text, avoided validation during suppressed refresh, refreshed tree/filter state after failed validation, preserved blocking action text, caught invalid fallback `map_frame`, handled filtered/stale target/composition/layer issue jumps, and added visible "điều hướng" labels.
+- Verification after review fixes: full pytest 197 passed; full ruff passed; smoke app ready.
 
 ### File List
 
@@ -115,8 +128,10 @@ claude-sonnet-4-6
 - `src/thucthengay/editor/modes/review_edit_mode.py`
 - `tests/unit/test_warnings_panel_and_issue_ui.py`
 - `tests/unit/test_review_edit_mode.py`
+- `src/thucthengay/editor/models/composition_tree_model.py`
 
 ## Change Log
 
 - 2026-05-25: Created story context from Epic 4 backlog and started implementation.
 - 2026-05-25: Implemented all ACs — layer issue column, WarningsPanelWidget, jump navigation, 22 new tests. All gates pass.
+- 2026-05-25: Code review found 8 patch findings; all fixed and verified. Story marked done.

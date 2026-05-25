@@ -1,5 +1,5 @@
 # generated: 2026-05-24
-# last_updated: 2026-05-25  # 5-1 + 5-2 review
+# last_updated: 2026-05-25  # 4-6 code review complete
 # project: 3.ThucTheNgay
 # project_key: NOKEY
 # tracking_system: file-system
@@ -68,13 +68,13 @@ development_status:
   3-6-implement-slide-preview-panel-with-debounced-updates: done
   3-7-implement-review-action-bar-and-keyboard-workflow: done
   epic-3-retrospective: optional
-  epic-4: in-progress
+  epic-4: done
   4-1-define-validation-engine-and-issue-schema: done
   4-2-validate-composition-readiness-rules: done
   4-3-run-validation-on-select-include-and-export-preflight: done
-  4-4-surface-issues-in-tree-layer-ui-and-warnings-panel: review
-  4-5-implement-metadata-editor-for-capture-date-time-correction: review
-  4-6-confirm-cache-move-when-corrected-date-changes: review
+  4-4-surface-issues-in-tree-layer-ui-and-warnings-panel: done
+  4-5-implement-metadata-editor-for-capture-date-time-correction: done
+  4-6-confirm-cache-move-when-corrected-date-changes: done
   epic-4-retrospective: optional
   epic-5: in-progress
   5-1-build-shared-render-specification-from-composition-state: review

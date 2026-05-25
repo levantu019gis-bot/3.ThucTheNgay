@@ -119,6 +119,34 @@ class TestUpdateLayerMetadata:
                 metadata_status=MetadataStatus.NEEDS_MANUAL_CORRECTION,
             )
 
+    def test_time_without_date_raises_workspace_error(self, tmp_path: Path) -> None:
+        service, comp = self._bootstrap_service(tmp_path)
+
+        with pytest.raises(WorkspaceError, match="Cần nhập ngày chụp"):
+            service.update_layer_metadata(
+                comp.composition_id,
+                "L1",
+                capture_date=None,
+                capture_time=time(9, 30),
+                cloud_percent=None,
+                metadata_source=MetadataSource.MANUAL,
+                metadata_status=MetadataStatus.NEEDS_MANUAL_CORRECTION,
+            )
+
+    def test_invalid_cloud_percent_is_rejected(self, tmp_path: Path) -> None:
+        service, comp = self._bootstrap_service(tmp_path)
+
+        with pytest.raises(ValueError):
+            service.update_layer_metadata(
+                comp.composition_id,
+                "L1",
+                capture_date=date(2026, 5, 25),
+                capture_time=time(9, 30),
+                cloud_percent=101.0,
+                metadata_source=MetadataSource.MANUAL,
+                metadata_status=MetadataStatus.VALID,
+            )
+
     def test_clears_date_time_and_cloud_when_none(self, tmp_path: Path) -> None:
         service, comp = self._bootstrap_service(tmp_path)
         updated = service.update_layer_metadata(
@@ -204,7 +232,7 @@ class TestMetadataEditorDialog:
         assert received == []
         assert "Cần nhập ngày" in dialog.validation_text
 
-    def test_save_with_only_date_uses_needs_manual_correction_status(self) -> None:
+    def test_save_with_only_date_shows_validation_and_does_not_emit(self) -> None:
         qapp()
         layer = _layer(capture_date=date(2026, 5, 25), capture_time=None)
         dialog = MetadataEditorDialog(layer)
@@ -216,13 +244,10 @@ class TestMetadataEditorDialog:
 
         dialog._on_save()
 
-        assert len(received) == 1
-        _lid, payload = received[0]
-        assert payload["capture_time"] is None
-        assert payload["metadata_status"] == MetadataStatus.NEEDS_MANUAL_CORRECTION
-        assert payload["metadata_source"] == MetadataSource.MANUAL
+        assert received == []
+        assert "Cần nhập giờ" in dialog.validation_text
 
-    def test_save_with_no_fields_at_all_succeeds_as_needs_manual(self) -> None:
+    def test_save_with_no_fields_shows_validation_and_does_not_emit(self) -> None:
         qapp()
         layer = _layer(capture_date=None, capture_time=None, cloud_percent=None)
         dialog = MetadataEditorDialog(layer)
@@ -235,12 +260,8 @@ class TestMetadataEditorDialog:
 
         dialog._on_save()
 
-        assert len(received) == 1
-        _lid, payload = received[0]
-        assert payload["capture_date"] is None
-        assert payload["capture_time"] is None
-        assert payload["cloud_percent"] is None
-        assert payload["metadata_status"] == MetadataStatus.NEEDS_MANUAL_CORRECTION
+        assert received == []
+        assert "Cần nhập ngày" in dialog.validation_text
 
     def test_manual_source_state_pill_shows_manual_label(self) -> None:
         qapp()

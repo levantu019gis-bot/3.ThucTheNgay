@@ -78,6 +78,7 @@ class WarningsPanelWidget(QWidget):
                 text = f"{text} | {ref_text}"
             if issue.remediation:
                 text = f"{text}\n  → {issue.remediation}"
+            text = f"{text}\n  → điều hướng"
 
             item = QListWidgetItem(text)
             item.setIcon(_severity_icon(issue.severity))

@@ -135,13 +135,7 @@ class MetadataEditorDialog(QDialog):
             self._validation_label.setText(error)
             return
 
-        capture_date = payload["capture_date"]
-        capture_time = payload["capture_time"]
-        if capture_date is not None and capture_time is not None:
-            metadata_status = MetadataStatus.VALID
-        else:
-            metadata_status = MetadataStatus.NEEDS_MANUAL_CORRECTION
-        payload["metadata_status"] = metadata_status
+        payload["metadata_status"] = MetadataStatus.VALID
         payload["metadata_source"] = MetadataSource.MANUAL
 
         self._validation_label.setText("")
@@ -174,8 +168,10 @@ class MetadataEditorDialog(QDialog):
         cloud = payload.get("cloud_percent")
         if cloud is not None and (cloud < 0 or cloud > 100):
             return "Giá trị mây phải trong 0–100."
-        if payload.get("capture_date") is None and payload.get("capture_time") is not None:
-            return "Cần nhập ngày chụp khi đã có giờ chụp."
+        if payload.get("capture_date") is None:
+            return "Cần nhập ngày chụp."
+        if payload.get("capture_time") is None:
+            return "Cần nhập giờ chụp."
         return None
 
 

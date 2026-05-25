@@ -329,6 +329,7 @@ class TestWarningsPanelWidget:
         panel.set_issues([issue], composition_id="c1", target_id="tgt")
         item_text = panel._list.item(0).text()
         assert "Cách sửa: làm X" in item_text
+        assert "điều hướng" in item_text
 
     def test_empty_issues_shows_placeholder_row(self) -> None:
         qapp()

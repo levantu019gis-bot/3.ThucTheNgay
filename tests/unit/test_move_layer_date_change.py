@@ -11,6 +11,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PySide6.QtWidgets import QApplication
 
+import thucthengay.editor.widgets.metadata_editor as metadata_editor
 from thucthengay.editor.modes.review_edit_mode import ReviewEditMode
 from thucthengay.models import (
     Composition,
@@ -177,6 +178,8 @@ class TestMoveLayerBetweenCompositions:
 
         assert updated_source.needs_revalidation is True
         assert updated_dest.needs_revalidation is True
+        assert [layer.order for layer in updated_source.layers] == [0]
+        assert [layer.order for layer in updated_dest.layers] == [0]
         # ready/include not silently promoted
         assert updated_source.ready is False
         assert updated_source.include is False
@@ -220,6 +223,178 @@ class TestMoveLayerBetweenCompositions:
                 metadata_source=MetadataSource.MANUAL,
                 metadata_status=MetadataStatus.NEEDS_MANUAL_CORRECTION,
             )
+
+    def test_invalid_layer_metadata_is_rejected(self, tmp_path: Path) -> None:
+        service = self._bootstrap(tmp_path)
+        service.write_composition(
+            _composition("tgt__20260525", "tgt", date(2026, 5, 25), [_layer("L1")])
+        )
+
+        with pytest.raises(WorkspaceError):
+            service.move_layer_between_compositions(
+                "tgt__20260525",
+                "L1",
+                new_composition_id="tgt__20260601",
+                new_target_id="tgt",
+                new_capture_date=date(2026, 6, 1),
+                capture_time=time(9, 0),
+                cloud_percent=999.0,
+                metadata_source=MetadataSource.MANUAL,
+                metadata_status=MetadataStatus.VALID,
+            )
+
+    def test_corrupt_destination_blocks_move_instead_of_replacing_it(
+        self, tmp_path: Path
+    ) -> None:
+        service = self._bootstrap(tmp_path)
+        service.write_composition(
+            _composition("tgt__20260525", "tgt", date(2026, 5, 25), [_layer("L1")])
+        )
+        service.write_composition(
+            _composition("tgt__20260601", "tgt", date(2026, 6, 1), [])
+        )
+        destination_path = service.paths.composition_file("tgt__20260601")
+        destination_path.write_text("{", encoding="utf-8")
+
+        with pytest.raises(WorkspaceError):
+            service.move_layer_between_compositions(
+                "tgt__20260525",
+                "L1",
+                new_composition_id="tgt__20260601",
+                new_target_id="tgt",
+                new_capture_date=date(2026, 6, 1),
+                capture_time=time(9, 0),
+                cloud_percent=None,
+                metadata_source=MetadataSource.MANUAL,
+                metadata_status=MetadataStatus.VALID,
+            )
+
+        assert destination_path.read_text(encoding="utf-8") == "{"
+
+    def test_destination_identity_mismatch_raises_workspace_error(
+        self, tmp_path: Path
+    ) -> None:
+        service = self._bootstrap(tmp_path)
+        service.write_composition(
+            _composition("tgt__20260525", "tgt", date(2026, 5, 25), [_layer("L1")])
+        )
+        service.write_composition(
+            _composition("tgt__20260601", "other", date(2026, 6, 1), [])
+        )
+
+        with pytest.raises(WorkspaceError, match="không khớp"):
+            service.move_layer_between_compositions(
+                "tgt__20260525",
+                "L1",
+                new_composition_id="tgt__20260601",
+                new_target_id="tgt",
+                new_capture_date=date(2026, 6, 1),
+                capture_time=time(9, 0),
+                cloud_percent=None,
+                metadata_source=MetadataSource.MANUAL,
+                metadata_status=MetadataStatus.VALID,
+            )
+
+    def test_duplicate_layer_in_destination_raises_workspace_error(
+        self, tmp_path: Path
+    ) -> None:
+        service = self._bootstrap(tmp_path)
+        service.write_composition(
+            _composition("tgt__20260525", "tgt", date(2026, 5, 25), [_layer("L1")])
+        )
+        service.write_composition(
+            _composition(
+                "tgt__20260601",
+                "tgt",
+                date(2026, 6, 1),
+                [_layer("L1", capture_date=date(2026, 6, 1))],
+            )
+        )
+
+        with pytest.raises(WorkspaceError, match="đã có layer"):
+            service.move_layer_between_compositions(
+                "tgt__20260525",
+                "L1",
+                new_composition_id="tgt__20260601",
+                new_target_id="tgt",
+                new_capture_date=date(2026, 6, 1),
+                capture_time=time(9, 0),
+                cloud_percent=None,
+                metadata_source=MetadataSource.MANUAL,
+                metadata_status=MetadataStatus.VALID,
+            )
+
+    def test_new_destination_is_rolled_back_when_source_write_fails(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        service = self._bootstrap(tmp_path)
+        service.write_composition(
+            _composition("tgt__20260525", "tgt", date(2026, 5, 25), [_layer("L1")])
+        )
+        original_write = service.write_composition
+
+        def fail_source_write(composition: Composition) -> Path:
+            if composition.composition_id == "tgt__20260525":
+                raise OSError("source locked")
+            return original_write(composition)
+
+        monkeypatch.setattr(service, "write_composition", fail_source_write)
+
+        with pytest.raises(WorkspaceError, match="Đã khôi phục"):
+            service.move_layer_between_compositions(
+                "tgt__20260525",
+                "L1",
+                new_composition_id="tgt__20260601",
+                new_target_id="tgt",
+                new_capture_date=date(2026, 6, 1),
+                capture_time=time(9, 0),
+                cloud_percent=None,
+                metadata_source=MetadataSource.MANUAL,
+                metadata_status=MetadataStatus.VALID,
+            )
+
+        assert not service.paths.composition_file("tgt__20260601").exists()
+        assert "tgt__20260601" not in service.load_manifest().composition_ids
+
+    def test_existing_destination_is_restored_when_source_write_fails(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        service = self._bootstrap(tmp_path)
+        service.write_composition(
+            _composition("tgt__20260525", "tgt", date(2026, 5, 25), [_layer("L1")])
+        )
+        service.write_composition(
+            _composition(
+                "tgt__20260601",
+                "tgt",
+                date(2026, 6, 1),
+                [_layer("X1", capture_date=date(2026, 6, 1))],
+            )
+        )
+        original_write = service.write_composition
+
+        def fail_source_write(composition: Composition) -> Path:
+            if composition.composition_id == "tgt__20260525":
+                raise OSError("source locked")
+            return original_write(composition)
+
+        monkeypatch.setattr(service, "write_composition", fail_source_write)
+
+        with pytest.raises(WorkspaceError, match="Đã khôi phục"):
+            service.move_layer_between_compositions(
+                "tgt__20260525",
+                "L1",
+                new_composition_id="tgt__20260601",
+                new_target_id="tgt",
+                new_capture_date=date(2026, 6, 1),
+                capture_time=time(9, 0),
+                cloud_percent=None,
+                metadata_source=MetadataSource.MANUAL,
+                metadata_status=MetadataStatus.VALID,
+            )
+
+        dest = service.read_composition("tgt__20260601")
+        assert [layer.layer_id for layer in dest.layers] == ["X1"]
 
 
 # --- ReviewEditMode date-change integration ---
@@ -328,3 +503,86 @@ class TestReviewEditModeDateChange:
         assert confirm_calls == []
         source = service.read_composition("tgt__20260525")
         assert source.layers[0].capture_date is None
+
+
+class FakeMessageBox:
+    class Icon:
+        Warning = object()
+
+    class ButtonRole:
+        AcceptRole = object()
+        RejectRole = object()
+
+    click_confirm = False
+    instances: list[FakeMessageBox] = []
+
+    def __init__(self, parent=None) -> None:  # noqa: ANN001
+        self.parent = parent
+        self.default_button = None
+        self.confirm_button = None
+        self.cancel_button = None
+        self.clicked_button = None
+        FakeMessageBox.instances.append(self)
+
+    def setObjectName(self, _name: str) -> None:
+        return None
+
+    def setIcon(self, _icon) -> None:  # noqa: ANN001
+        return None
+
+    def setWindowTitle(self, title: str) -> None:
+        self.title = title
+
+    def setText(self, text: str) -> None:
+        self.text = text
+
+    def setInformativeText(self, text: str) -> None:
+        self.informative_text = text
+
+    def addButton(self, label: str, _role) -> object:  # noqa: ANN001
+        button = object()
+        if label == "Chuyển":
+            self.confirm_button = button
+        if label == "Hủy":
+            self.cancel_button = button
+        return button
+
+    def setDefaultButton(self, button: object) -> None:
+        self.default_button = button
+
+    def exec(self) -> None:
+        self.clicked_button = (
+            self.confirm_button if FakeMessageBox.click_confirm else self.default_button
+        )
+
+    def clickedButton(self) -> object | None:
+        return self.clicked_button
+
+
+class TestConfirmDateChangeDialog:
+    def test_default_button_is_cancel(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        FakeMessageBox.click_confirm = False
+        FakeMessageBox.instances = []
+        monkeypatch.setattr(metadata_editor, "QMessageBox", FakeMessageBox)
+
+        accepted = metadata_editor.confirm_date_change_dialog(
+            "L1", "tgt__20260525", "tgt__20260601"
+        )
+
+        assert accepted is False
+        box = FakeMessageBox.instances[0]
+        assert box.default_button is box.cancel_button
+        assert box.title == "Xác nhận đổi ngày"
+
+    def test_returns_true_only_for_explicit_confirm(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        FakeMessageBox.click_confirm = True
+        FakeMessageBox.instances = []
+        monkeypatch.setattr(metadata_editor, "QMessageBox", FakeMessageBox)
+
+        accepted = metadata_editor.confirm_date_change_dialog(
+            "L1", "tgt__20260525", "tgt__20260601"
+        )
+
+        assert accepted is True
