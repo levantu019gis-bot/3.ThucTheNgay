@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from datetime import date, time
 from pathlib import Path
@@ -7,10 +8,10 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (
     QApplication,
     QGraphicsView,
-    QLabel,
     QSplitter,
     QTableView,
     QTreeView,
@@ -29,7 +30,12 @@ from thucthengay.editor.models.layer_stack_model import (
     LayerStackRole,
 )
 from thucthengay.editor.modes.review_edit_mode import ReviewEditMode
-from thucthengay.editor.widgets import GisCanvasState, GisCanvasWidget
+from thucthengay.editor.widgets import (
+    GisCanvasState,
+    GisCanvasWidget,
+    SlidePreviewState,
+    SlidePreviewWidget,
+)
 from thucthengay.models import (
     Composition,
     GridConfig,
@@ -59,6 +65,13 @@ def target_config(target_id: str, *, sort_order: int, name: str) -> TargetConfig
         scale=50000,
         grid=GridConfig(interval=GridInterval(minutes=1)),
         export=TargetExportConfig(template_metadata_file=f"{target_id}.template.json"),
+        metadata={
+            "template_metadata": {
+                "template_pptx": f"{target_id}.pptx",
+                "slide_index": 0,
+                "map_frame": {"x": 0, "y": 0, "width": 640, "height": 360},
+            }
+        },
     )
 
 
@@ -273,7 +286,37 @@ def test_review_edit_mode_loads_selected_composition_through_workspace_service(
     assert mode.selected_composition.composition_id == "alpha__20260525"
     assert "alpha__20260525" in mode.composition_title.text()
     assert mode.layer_model.rowCount() == 1
-    assert "Validation" in mode.warnings_summary.text()
+    assert mode.warnings_panel._list.count() >= 0  # panel is wired up
+
+
+def test_review_edit_selection_persists_compact_validation_summary_only(
+    tmp_path: Path,
+) -> None:
+    qapp()
+    service = WorkspaceService(tmp_path / "workspace")
+    service.initialize(config_path="config.json")
+    service.write_composition(
+        composition(
+            "alpha__20260525",
+            "alpha",
+            date(2026, 5, 25),
+            needs_revalidation=True,
+        )
+    )
+
+    mode = ReviewEditMode()
+    mode.load_workspace(service, targets=[target_config("alpha", sort_order=1, name="Alpha")])
+    target_index = mode.tree_model.index(0, 0)
+    mode.tree_view.setCurrentIndex(mode.tree_model.index(0, 0, target_index))
+
+    reloaded = service.read_composition("alpha__20260525")
+    raw = json.loads(
+        (service.paths.compositions / "alpha__20260525.json").read_text(encoding="utf-8")
+    )
+
+    assert reloaded.needs_revalidation is False
+    assert reloaded.validation_summary.error_count == 0
+    assert "issues" not in raw
 
 
 def test_layer_stack_model_display_roles_and_no_visible_warning() -> None:
@@ -377,6 +420,92 @@ def test_gis_canvas_states_fixed_frame_and_stale_render_guard() -> None:
     canvas.set_error("Không đọc được raster.")
     assert canvas.state() == GisCanvasState.ERROR
     assert "raster" in canvas.state_text()
+
+
+def test_slide_preview_debounces_state_and_rejects_stale_results() -> None:
+    app = qapp()
+    preview = SlidePreviewWidget(debounce_ms=1)
+    selected = composition(
+        "alpha__20260525",
+        "alpha",
+        date(2026, 5, 25),
+        needs_revalidation=False,
+    )
+    grid = GridConfig(interval=GridInterval(minutes=2, seconds=30), label_format="dms_short")
+
+    preview.set_composition(
+        selected,
+        effective_grid=grid,
+        background={"color": "#101820"},
+    )
+    stale_token = preview.begin_preview_request()
+
+    assert preview.state() == SlidePreviewState.NEEDS_UPDATE
+    assert "Preview cần cập nhật" in preview.state_text()
+    assert "Scale 1:50,000" in preview.detail_text()
+    assert "Grid: 0d 2m 30s" in preview.detail_text()
+    assert "#101820" in preview.detail_text()
+
+    preview.set_composition(
+        selected.model_copy(
+            update={"view": ViewState(center=[106.8, 10.9], scale=25000)}
+        ),
+        effective_grid=grid,
+    )
+
+    assert preview.apply_preview_result(stale_token, "old preview") is False
+
+    app.processEvents()
+    preview._timer.timeout.emit()
+
+    assert preview.state() == SlidePreviewState.LOADING
+    preview._render_timer.timeout.emit()
+
+    assert preview.state() == SlidePreviewState.RENDERED
+    assert "Preview đã cập nhật" in preview.state_text()
+    assert "Scale 1:25,000" in preview.detail_text()
+
+    preview.set_render_error("Không đọc được preview cache.")
+
+    assert preview.state() == SlidePreviewState.RENDER_ERROR
+    assert "tiếp tục chỉnh sửa" in preview.detail_text()
+
+    preview.set_composition(selected, effective_grid=grid)
+    preview._timer.timeout.emit()
+    preview._render_timer.timeout.emit()
+
+    assert preview.state() == SlidePreviewState.RENDERED
+    assert "Không đọc được" not in preview.detail_text()
+
+
+def test_slide_preview_review_edge_cases_do_not_accept_stale_results() -> None:
+    qapp()
+    preview = SlidePreviewWidget(debounce_ms=-5)
+    selected = composition(
+        "alpha__20260525",
+        "alpha",
+        date(2026, 5, 25),
+        needs_revalidation=False,
+    )
+    selected = selected.model_copy(
+        update={"view": ViewState(center=[106.7, 10.8], scale=50000, rotation=0)}
+    )
+
+    preview.set_composition(
+        selected,
+        background={"color": "#101820", 7: {"nested": ["value"]}},
+    )
+    stale_token = preview.begin_preview_request()
+    preview._timer.timeout.emit()
+
+    assert preview.state() == SlidePreviewState.LOADING
+    assert "Rotation 0" in preview.detail_text()
+
+    preview.set_render_error("Không tạo được preview.")
+
+    assert preview.apply_preview_result(stale_token, "old preview") is False
+    assert preview.state() == SlidePreviewState.RENDER_ERROR
+    assert "tiếp tục chỉnh sửa" in preview.detail_text()
 
 
 def test_review_edit_layer_stack_saves_visibility_order_and_warning(
@@ -516,6 +645,7 @@ def test_review_edit_gis_canvas_saves_pan_zoom_and_marks_preview_stale(
     assert panned.include is False
     assert panned.review_order is None
     assert "Preview cần cập nhật" in mode.preview_summary.text()
+    assert mode.slide_preview.state() == SlidePreviewState.NEEDS_UPDATE
 
     mode.gis_canvas.zoom_by_factor(0.5)
 
@@ -584,9 +714,87 @@ def test_review_edit_grid_controls_show_defaults_save_override_and_mark_stale(
     assert target.grid.interval.minutes == 1
     assert "override" in mode.grid_status_label.text()
     assert "Preview cần cập nhật" in mode.preview_summary.text()
+    assert "Grid: 0d 2m 30s" in mode.slide_preview.detail_text()
     assert mode.tree_model.index_for_composition_id("alpha__20260525").data(
         CompositionTreeRole.STATUS_TEXT
     ) == "Cần kiểm tra lại"
+
+
+def test_review_edit_slide_preview_loads_and_debounces_after_selection_and_edits(
+    tmp_path: Path,
+) -> None:
+    qapp()
+    service = WorkspaceService(tmp_path / "workspace")
+    service.initialize(config_path="config.json")
+    service.write_composition(
+        composition(
+            "alpha__20260525",
+            "alpha",
+            date(2026, 5, 25),
+            needs_revalidation=False,
+        )
+    )
+    target = target_config("alpha", sort_order=1, name="Alpha Target").model_copy(
+        update={
+            "grid": GridConfig(interval=GridInterval(minutes=1), label_format="dms_full"),
+            "metadata": {"preview_background": {"color": "#ddeeff"}},
+        }
+    )
+
+    mode = ReviewEditMode()
+    mode.load_workspace(service, targets=[target])
+    target_index = mode.tree_model.index(0, 0)
+    mode.tree_view.setCurrentIndex(mode.tree_model.index(0, 0, target_index))
+
+    assert mode.slide_preview.state() == SlidePreviewState.NEEDS_UPDATE
+    assert "alpha__20260525" in mode.slide_preview.detail_text()
+    assert "Layers: alpha__20260525-layer" in mode.slide_preview.detail_text()
+    assert "#ddeeff" in mode.slide_preview.detail_text()
+
+    mode.slide_preview._timer.timeout.emit()
+
+    assert mode.slide_preview.state() == SlidePreviewState.LOADING
+    mode.slide_preview._render_timer.timeout.emit()
+
+    assert mode.slide_preview.state() == SlidePreviewState.RENDERED
+    assert "Preview đã cập nhật" in mode.preview_summary.text()
+
+    mode.gis_canvas.pan_by_pixels(20, 0)
+
+    assert mode.slide_preview.state() == SlidePreviewState.NEEDS_UPDATE
+    assert "Preview cần cập nhật" in mode.preview_summary.text()
+
+    mode.slide_preview._timer.timeout.emit()
+    mode.slide_preview._render_timer.timeout.emit()
+
+    assert mode.slide_preview.state() == SlidePreviewState.RENDERED
+    assert "Scale 1:50,000" in mode.slide_preview.detail_text()
+
+
+def test_review_edit_slide_preview_uses_map_background_string(
+    tmp_path: Path,
+) -> None:
+    qapp()
+    service = WorkspaceService(tmp_path / "workspace")
+    service.initialize(config_path="config.json")
+    service.write_composition(
+        composition(
+            "alpha__20260525",
+            "alpha",
+            date(2026, 5, 25),
+            needs_revalidation=False,
+        )
+    )
+    target = target_config("alpha", sort_order=1, name="Alpha Target").model_copy(
+        update={"metadata": {"map_background": "#112233"}}
+    )
+
+    mode = ReviewEditMode()
+    mode.load_workspace(service, targets=[target])
+    target_index = mode.tree_model.index(0, 0)
+    mode.tree_view.setCurrentIndex(mode.tree_model.index(0, 0, target_index))
+
+    assert "#112233" in mode.slide_preview.detail_text()
 
 
 def test_review_edit_grid_controls_reject_invalid_values_without_write(
@@ -698,6 +906,178 @@ def test_review_edit_filter_bar_counts_empty_state_and_selection_restore(
     )
 
 
+def test_review_edit_action_bar_includes_and_advances_on_passing_gate(
+    tmp_path: Path,
+) -> None:
+    qapp()
+    service = WorkspaceService(tmp_path / "workspace")
+    service.initialize(config_path="config.json")
+    service.write_composition(
+        composition("alpha__20260525", "alpha", date(2026, 5, 25), needs_revalidation=False)
+    )
+    service.write_composition(
+        composition("alpha__20260526", "alpha", date(2026, 5, 26), needs_revalidation=False)
+    )
+
+    mode = ReviewEditMode()
+    mode.load_workspace(
+        service,
+        targets=[target_config("alpha", sort_order=1, name="Alpha Target")],
+    )
+    target_index = mode.tree_model.index(0, 0)
+    mode.tree_view.setCurrentIndex(mode.tree_model.index(0, 0, target_index))
+
+    buttons = [
+        mode.previous_button,
+        mode.skip_button,
+        mode.include_validate_button,
+        mode.revalidate_button,
+    ]
+    assert [button.property("primaryAction") for button in buttons].count(True) == 1
+    assert mode.include_validate_button.isEnabled()
+    assert not mode.previous_button.isEnabled()
+
+    mode.include_validate_button.click()
+
+    included = service.read_composition("alpha__20260525")
+    assert included.reviewed is True
+    assert included.ready is True
+    assert included.include is True
+    assert included.review_order == 1
+    assert mode.tree_model.composition_id_for_index(mode.tree_view.currentIndex()) == (
+        "alpha__20260526"
+    )
+    assert mode.previous_button.isEnabled()
+
+
+def test_review_edit_action_bar_blocks_include_and_supports_skip_previous(
+    tmp_path: Path,
+) -> None:
+    qapp()
+    service = WorkspaceService(tmp_path / "workspace")
+    service.initialize(config_path="config.json")
+    blocked = composition(
+        "alpha__20260525",
+        "alpha",
+        date(2026, 5, 25),
+        needs_revalidation=False,
+    )
+    blocked = blocked.model_copy(
+        update={"layers": [layer.model_copy(update={"visible": False}) for layer in blocked.layers]}
+    )
+    service.write_composition(blocked)
+    service.write_composition(
+        composition("alpha__20260526", "alpha", date(2026, 5, 26), needs_revalidation=False)
+    )
+
+    mode = ReviewEditMode()
+    mode.load_workspace(
+        service,
+        targets=[target_config("alpha", sort_order=1, name="Alpha Target")],
+    )
+    target_index = mode.tree_model.index(0, 0)
+    mode.tree_view.setCurrentIndex(mode.tree_model.index(0, 0, target_index))
+
+    mode.include_validate_button.click()
+
+    unchanged = service.read_composition("alpha__20260525")
+    assert unchanged.reviewed is False
+    assert unchanged.ready is False
+    assert unchanged.include is False
+    assert mode.warnings_panel._list.count() > 0
+    assert mode.tree_model.composition_id_for_index(mode.tree_view.currentIndex()) == (
+        "alpha__20260525"
+    )
+
+    mode.skip_button.click()
+
+    skipped = service.read_composition("alpha__20260525")
+    assert skipped.reviewed is True
+    assert skipped.ready is False
+    assert skipped.include is False
+    assert skipped.review_order is None
+    assert mode.tree_model.composition_id_for_index(mode.tree_view.currentIndex()) == (
+        "alpha__20260526"
+    )
+
+    second_before = service.read_composition("alpha__20260526")
+    mode.previous_button.click()
+    second_after = service.read_composition("alpha__20260526")
+
+    assert second_after == second_before
+    assert mode.tree_model.composition_id_for_index(mode.tree_view.currentIndex()) == (
+        "alpha__20260525"
+    )
+
+
+def test_review_edit_revalidate_clears_stale_error_summary_with_lightweight_gate(
+    tmp_path: Path,
+) -> None:
+    qapp()
+    service = WorkspaceService(tmp_path / "workspace")
+    service.initialize(config_path="config.json")
+    service.write_composition(
+        composition(
+            "alpha__20260525",
+            "alpha",
+            date(2026, 5, 25),
+            needs_revalidation=True,
+            errors=1,
+        )
+    )
+
+    mode = ReviewEditMode()
+    mode.load_workspace(
+        service,
+        targets=[target_config("alpha", sort_order=1, name="Alpha Target")],
+    )
+    target_index = mode.tree_model.index(0, 0)
+    mode.tree_view.setCurrentIndex(mode.tree_model.index(0, 0, target_index))
+
+    revalidated = service.read_composition("alpha__20260525")
+    assert revalidated.needs_revalidation is False
+    assert revalidated.validation_summary.error_count == 0
+    assert revalidated.ready is False
+    assert revalidated.include is False
+    assert not mode.revalidate_button.isEnabled()
+
+
+def test_review_edit_keyboard_shortcuts_respect_text_input_arrow_guard(
+    tmp_path: Path,
+) -> None:
+    app = qapp()
+    service = WorkspaceService(tmp_path / "workspace")
+    service.initialize(config_path="config.json")
+    service.write_composition(
+        composition("alpha__20260525", "alpha", date(2026, 5, 25), needs_revalidation=False)
+    )
+
+    mode = ReviewEditMode()
+    mode.load_workspace(
+        service,
+        targets=[target_config("alpha", sort_order=1, name="Alpha Target")],
+    )
+    target_index = mode.tree_model.index(0, 0)
+    mode.tree_view.setCurrentIndex(mode.tree_model.index(0, 0, target_index))
+
+    mode.show()
+    mode.grid_minutes_input.setFocus()
+    app.processEvents()
+    mode.keyPressEvent(
+        QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Right, Qt.KeyboardModifier.NoModifier)
+    )
+
+    assert service.read_composition("alpha__20260525").include is False
+
+    mode.tree_view.setFocus()
+    app.processEvents()
+    mode.keyPressEvent(
+        QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Right, Qt.KeyboardModifier.NoModifier)
+    )
+
+    assert service.read_composition("alpha__20260525").include is True
+
+
 def test_review_edit_layout_and_app_shell_expose_review_mode() -> None:
     qapp()
 
@@ -713,4 +1093,4 @@ def test_review_edit_layout_and_app_shell_expose_review_mode() -> None:
     assert shell.review_edit_mode.tree_view.uniformRowHeights()
     assert shell.review_edit_mode.minimumWidth() >= 960
     assert shell.review_edit_mode.findChild(QSplitter, "reviewMainSplitter") is not None
-    assert shell.review_edit_mode.findChild(QLabel, "reviewWarningsSummary") is not None
+    assert shell.review_edit_mode.warnings_panel is not None

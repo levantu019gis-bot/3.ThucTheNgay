@@ -1,4 +1,4 @@
-"""Review/Edit workstation mode."""
+﻿"""Review/Edit workstation mode."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QButtonGroup,
     QFrame,
     QGridLayout,
@@ -27,8 +28,26 @@ from thucthengay.editor.models.composition_tree_model import (
     queue_filter_label,
 )
 from thucthengay.editor.models.layer_stack_model import LayerStackColumn, LayerStackModel
-from thucthengay.editor.widgets import GisCanvasWidget
-from thucthengay.models import Composition, GridConfig, GridInterval, TargetConfig
+from thucthengay.editor.widgets import (
+    GisCanvasWidget,
+    MetadataEditorDialog,
+    SlidePreviewWidget,
+    WarningsPanelWidget,
+    confirm_date_change_dialog,
+)
+from thucthengay.models import (
+    Composition,
+    GridConfig,
+    GridInterval,
+    Issue,
+    TargetConfig,
+    TemplateMetadata,
+)
+from thucthengay.validation import (
+    ValidationContext,
+    ValidationResult,
+    validate_composition_readiness,
+)
 from thucthengay.workspace import WorkspaceError, WorkspaceService
 
 
@@ -44,6 +63,7 @@ class ReviewEditMode(QWidget):
         self._workspace_service: WorkspaceService | None = None
         self._targets: list[TargetConfig] | None = None
         self.selected_composition: Composition | None = None
+        self._suppress_selection_validation = False
 
         self.tree_model = CompositionTreeModel(self)
         self.tree_view = QTreeView()
@@ -71,13 +91,13 @@ class ReviewEditMode(QWidget):
             self.filter_buttons[queue_filter] = button
         self.filter_buttons[QueueFilter.ALL].setChecked(True)
 
-        self.empty_state_label = QLabel("Không có composition khớp bộ lọc hiện tại.")
+        self.empty_state_label = QLabel("KhÃ´ng cÃ³ composition khá»›p bá»™ lá»c hiá»‡n táº¡i.")
         self.empty_state_label.setObjectName("reviewQueueEmptyState")
         self.empty_state_label.setWordWrap(True)
         self.empty_state_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty_state_label.setVisible(False)
 
-        self.composition_title = QLabel("Chưa chọn composition")
+        self.composition_title = QLabel("ChÆ°a chá»n composition")
         self.composition_title.setObjectName("reviewCompositionTitle")
         self.composition_title.setWordWrap(True)
 
@@ -105,8 +125,15 @@ class ReviewEditMode(QWidget):
         self.move_layer_down_button = QPushButton("Xuống")
         self.move_layer_down_button.setObjectName("reviewLayerMoveDown")
         self.move_layer_down_button.clicked.connect(lambda: self._move_selected_layer(1))
+        self.edit_metadata_button = QPushButton("Sửa metadata")
+        self.edit_metadata_button.setObjectName("reviewLayerEditMetadata")
+        self.edit_metadata_button.setToolTip("Sửa ngày/giờ/cloud cho layer đang chọn")
+        self.edit_metadata_button.clicked.connect(self._open_metadata_editor)
+        self.edit_metadata_button.setEnabled(False)
 
-        self.layer_warning_label = QLabel("Không còn layer nào đang bật. Cần bật ít nhất 1 layer.")
+        self.layer_warning_label = QLabel(
+            "Không còn layer nào đang bật. Cần bật ít nhất 1 layer."
+        )
         self.layer_warning_label.setObjectName("reviewLayerStackWarning")
         self.layer_warning_label.setWordWrap(True)
         self.layer_warning_label.setVisible(False)
@@ -118,38 +145,61 @@ class ReviewEditMode(QWidget):
         self.grid_minutes_input = QLineEdit("0")
         self.grid_minutes_input.setObjectName("reviewGridMinutes")
         self.grid_minutes_input.setFixedWidth(56)
-        self.grid_minutes_input.setToolTip("Phút của khoảng grid")
+        self.grid_minutes_input.setToolTip("PhÃºt cá»§a khoáº£ng grid")
         self.grid_seconds_input = QLineEdit("0")
         self.grid_seconds_input.setObjectName("reviewGridSeconds")
         self.grid_seconds_input.setFixedWidth(64)
-        self.grid_seconds_input.setToolTip("Giây của khoảng grid")
+        self.grid_seconds_input.setToolTip("GiÃ¢y cá»§a khoáº£ng grid")
         self.grid_label_format_input = QLineEdit("dms_full")
         self.grid_label_format_input.setObjectName("reviewGridLabelFormat")
-        self.grid_label_format_input.setToolTip("Định dạng nhãn grid")
-        self.grid_status_label = QLabel("Chưa chọn composition.")
+        self.grid_label_format_input.setToolTip("Äá»‹nh dáº¡ng nhÃ£n grid")
+        self.grid_status_label = QLabel("ChÆ°a chá»n composition.")
         self.grid_status_label.setObjectName("reviewGridStatus")
         self.grid_status_label.setWordWrap(True)
         self.grid_validation_label = QLabel("")
         self.grid_validation_label.setObjectName("reviewGridValidation")
         self.grid_validation_label.setWordWrap(True)
-        self.save_grid_button = QPushButton("Lưu grid")
+        self.save_grid_button = QPushButton("LÆ°u grid")
         self.save_grid_button.setObjectName("reviewGridSave")
         self.save_grid_button.clicked.connect(self._save_grid_override)
 
-        self.preview_summary = QLabel("Slide preview sẽ hiển thị ở story 3.6.")
-        self.preview_summary.setObjectName("reviewPreviewSummary")
-        self.preview_summary.setWordWrap(True)
+        self.slide_preview = SlidePreviewWidget()
+        self.preview_summary = self.slide_preview.status_label
 
         self.gis_canvas = GisCanvasWidget()
         self.gis_canvas.viewEditCompleted.connect(self._persist_canvas_view)
 
-        self.action_summary = QLabel("Review actions: Trước | Skip | Include/Validate")
+        self.previous_button = QPushButton("TrÆ°á»›c")
+        self.previous_button.setObjectName("reviewActionPrevious")
+        self.previous_button.setToolTip("PhÃ­m trÃ¡i: quay láº¡i composition trÆ°á»›c")
+        self.previous_button.clicked.connect(self._go_previous)
+        self.skip_button = QPushButton("Skip")
+        self.skip_button.setObjectName("reviewActionSkip")
+        self.skip_button.setToolTip("PhÃ­m lÃªn: Ä‘Ã¡nh dáº¥u Ä‘Ã£ duyá»‡t nhÆ°ng khÃ´ng include")
+        self.skip_button.clicked.connect(self._skip_selected)
+        self.include_validate_button = QPushButton("Include/Validate")
+        self.include_validate_button.setObjectName("reviewActionIncludeValidate")
+        self.include_validate_button.setToolTip(
+            "PhÃ­m pháº£i: validate rá»“i include náº¿u khÃ´ng cÃ³ lá»—i blocking"
+        )
+        self.include_validate_button.clicked.connect(self._include_selected)
+        self.include_validate_button.setProperty("primaryAction", True)
+        self.revalidate_button = QPushButton("Revalidate")
+        self.revalidate_button.setObjectName("reviewActionRevalidate")
+        self.revalidate_button.setToolTip(
+            "Cháº¡y láº¡i validation gate hiá»‡n táº¡i cho composition Ä‘ang chá»n"
+        )
+        self.revalidate_button.clicked.connect(self._revalidate_selected)
+        for button in (self.previous_button, self.skip_button, self.revalidate_button):
+            button.setProperty("primaryAction", False)
+
+        self.action_summary = QLabel("Chá»n composition Ä‘á»ƒ dÃ¹ng review actions.")
         self.action_summary.setObjectName("reviewActionSummary")
         self.action_summary.setWordWrap(True)
 
-        self.warnings_summary = QLabel("Warnings panel sẽ hiển thị validation issue.")
-        self.warnings_summary.setObjectName("reviewWarningsSummary")
-        self.warnings_summary.setWordWrap(True)
+        self.warnings_panel = WarningsPanelWidget()
+        self.warnings_panel.setObjectName("reviewWarningsPanel")
+        self.warnings_panel.jumpRequested.connect(self._handle_issue_jump)
 
         left_panel = self._build_left_panel()
         right_panel = self._build_right_panel()
@@ -171,6 +221,10 @@ class ReviewEditMode(QWidget):
         if selection_model is not None:
             selection_model.currentChanged.connect(self._select_composition_index)
         self.layer_model.dataChanged.connect(self._persist_layer_visibility)
+        layer_selection = self.layer_table.selectionModel()
+        if layer_selection is not None:
+            layer_selection.currentChanged.connect(self._update_metadata_edit_button)
+        self._update_review_action_state()
 
     def load_workspace(
         self,
@@ -200,7 +254,7 @@ class ReviewEditMode(QWidget):
         layout.addWidget(self.empty_state_label)
         layout.addWidget(self._build_layer_panel(), 2)
         layout.addWidget(self._build_grid_panel(), 1)
-        layout.addWidget(self._panel_frame("Slide preview", self.preview_summary), 1)
+        layout.addWidget(self._panel_frame("Slide preview", self.slide_preview), 1)
         return panel
 
     def _filter_bar_layout(self) -> QHBoxLayout:
@@ -220,15 +274,15 @@ class ReviewEditMode(QWidget):
         layout.addWidget(self.composition_title)
         layout.addWidget(self._panel_frame("GIS editor", self.gis_canvas), 4)
         layout.addLayout(self._review_action_layout())
-        layout.addWidget(self._panel_frame("Warnings", self.warnings_summary), 1)
+        layout.addWidget(self._panel_frame("Warnings", self.warnings_panel), 1)
         return panel
 
     def _review_action_layout(self) -> QHBoxLayout:
         layout = QHBoxLayout()
-        for label in ("Trước", "Skip", "Include/Validate"):
-            button = QPushButton(label)
-            button.setEnabled(False)
-            layout.addWidget(button)
+        layout.addWidget(self.previous_button)
+        layout.addWidget(self.skip_button)
+        layout.addWidget(self.include_validate_button)
+        layout.addWidget(self.revalidate_button)
         layout.addStretch(1)
         layout.addWidget(self.action_summary)
         return layout
@@ -255,6 +309,7 @@ class ReviewEditMode(QWidget):
         toolbar = QHBoxLayout()
         toolbar.addWidget(QLabel("Layers"))
         toolbar.addStretch(1)
+        toolbar.addWidget(self.edit_metadata_button)
         toolbar.addWidget(self.move_layer_up_button)
         toolbar.addWidget(self.move_layer_down_button)
 
@@ -279,11 +334,11 @@ class ReviewEditMode(QWidget):
         fields = QGridLayout()
         fields.setHorizontalSpacing(6)
         fields.setVerticalSpacing(4)
-        fields.addWidget(QLabel("Độ"), 0, 0)
+        fields.addWidget(QLabel("Äá»™"), 0, 0)
         fields.addWidget(self.grid_degrees_input, 0, 1)
-        fields.addWidget(QLabel("Phút"), 0, 2)
+        fields.addWidget(QLabel("PhÃºt"), 0, 2)
         fields.addWidget(self.grid_minutes_input, 0, 3)
-        fields.addWidget(QLabel("Giây"), 0, 4)
+        fields.addWidget(QLabel("GiÃ¢y"), 0, 4)
         fields.addWidget(self.grid_seconds_input, 0, 5)
         fields.addWidget(QLabel("Label"), 1, 0)
         fields.addWidget(self.grid_label_format_input, 1, 1, 1, 5)
@@ -310,7 +365,7 @@ class ReviewEditMode(QWidget):
         has_visible_rows = self.tree_model.has_visible_compositions()
         active_label = queue_filter_label(self.tree_model.active_queue_filter)
         self.empty_state_label.setText(
-            f"Không có composition khớp bộ lọc \"{active_label}\"."
+            f"KhÃ´ng cÃ³ composition khá»›p bá»™ lá»c \"{active_label}\"."
         )
         self.empty_state_label.setVisible(not has_visible_rows)
 
@@ -339,13 +394,342 @@ class ReviewEditMode(QWidget):
 
         try:
             composition = self._workspace_service.read_composition(composition_id)
+            gate = self._review_gate(composition)
+            if not self._suppress_selection_validation:
+                composition = self._workspace_service.save_validation_summary(
+                    composition_id,
+                    gate.summary,
+                )
         except WorkspaceError as error:
-            self.warnings_summary.setText(f"Không tải được composition: {error}")
+            self.action_summary.setText(f"Không tải được composition: {error}")
             return
 
         self.selected_composition = composition
         self._update_detail_panels(composition)
+        if not self._suppress_selection_validation:
+            self._show_review_issues(gate.issues, update_action=False)
         self.compositionSelected.emit(composition)
+
+    def keyPressEvent(self, event) -> None:  # noqa: ANN001, N802
+        if self._focus_needs_arrow_keys():
+            super().keyPressEvent(event)
+            return
+
+        key = event.key()
+        if key == Qt.Key.Key_Right:
+            self._include_selected()
+            event.accept()
+            return
+        if key == Qt.Key.Key_Up:
+            self._skip_selected()
+            event.accept()
+            return
+        if key == Qt.Key.Key_Left:
+            self._go_previous()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def _focus_needs_arrow_keys(self) -> bool:
+        return isinstance(QApplication.focusWidget(), QLineEdit)
+
+    def _include_selected(self) -> None:
+        if self._workspace_service is None or self.selected_composition is None:
+            return
+
+        gate = self._review_gate(self.selected_composition)
+        composition_id = self.selected_composition.composition_id
+        try:
+            self.selected_composition = self._workspace_service.save_validation_summary(
+                composition_id,
+                gate.summary,
+            )
+        except WorkspaceError as error:
+            self.action_summary.setText(f"Không lưu được validation summary: {error}")
+            return
+        if not gate.passed:
+            self._show_review_issues(gate.issues)
+            self._update_review_action_state()
+            return
+        try:
+            updated = self._workspace_service.apply_include_transition(
+                composition_id,
+                validation_passed=True,
+            )
+        except WorkspaceError as error:
+            self.action_summary.setText(f"Không include được composition: {error}")
+            return
+
+        self.selected_composition = updated
+        self.action_summary.setText(
+            "Đã include composition và chuyển sang mục kế tiếp nếu có."
+        )
+        self._advance_after_transition(updated.composition_id)
+
+    def _skip_selected(self) -> None:
+        if self._workspace_service is None or self.selected_composition is None:
+            return
+
+        composition_id = self.selected_composition.composition_id
+        try:
+            updated = self._workspace_service.apply_skip_transition(composition_id)
+        except WorkspaceError as error:
+            self.action_summary.setText(f"Không skip được composition: {error}")
+            return
+
+        self.selected_composition = updated
+        self.action_summary.setText(
+            "Đã skip composition và chuyển sang mục kế tiếp nếu có."
+        )
+        self._advance_after_transition(updated.composition_id)
+
+    def _go_previous(self) -> None:
+        if self._workspace_service is None or self.selected_composition is None:
+            return
+
+        previous_id = self._workspace_service.previous_composition_id(
+            self.selected_composition.composition_id
+        )
+        if previous_id is None:
+            self.action_summary.setText("KhÃ´ng cÃ³ composition trÆ°á»›c Ä‘Ã³ trong queue.")
+            self._update_review_action_state()
+            return
+
+        self._refresh_workspace_projection(previous_id)
+        self.action_summary.setText("ÄÃ£ quay láº¡i composition trÆ°á»›c Ä‘Ã³.")
+
+    def _revalidate_selected(self) -> None:
+        if self._workspace_service is None or self.selected_composition is None:
+            return
+
+        gate = self._review_gate(self.selected_composition)
+        try:
+            updated = self._workspace_service.save_validation_summary(
+                self.selected_composition.composition_id,
+                gate.summary,
+            )
+        except WorkspaceError as error:
+            self.action_summary.setText(f"Không revalidate được composition: {error}")
+            return
+
+        if not gate.passed:
+            self.selected_composition = updated
+            self._update_detail_panels(updated)
+            self._show_review_issues(gate.issues)
+            self._update_review_action_state()
+            return
+
+        self.selected_composition = updated
+        self._update_detail_panels(updated)
+        self._refresh_workspace_projection(updated.composition_id, validate_selection=False)
+        self.action_summary.setText("Validation gate hiá»‡n táº¡i Ä‘Ã£ pass.")
+
+    def _review_gate(self, composition: Composition) -> ValidationResult:
+        return validate_composition_readiness(self._validation_context_for(composition))
+
+    def _validation_context_for(self, composition: Composition) -> ValidationContext:
+        target = self._target_for_composition(composition)
+        template_metadata: TemplateMetadata | None = None
+        template_error: str | None = None
+        if target is not None and "template_metadata" in target.metadata:
+            try:
+                template_metadata = TemplateMetadata.model_validate(
+                    target.metadata["template_metadata"]
+                )
+            except Exception as error:  # noqa: BLE001
+                template_error = str(error)
+        elif target is not None and isinstance(target.metadata.get("map_frame"), dict):
+            frame = dict(target.metadata["map_frame"])
+            frame.setdefault("x", 0)
+            frame.setdefault("y", 0)
+            template_metadata = TemplateMetadata.model_validate(
+                {
+                    "template_pptx": target.export.template_metadata_file,
+                    "slide_index": 0,
+                    "map_frame": frame,
+                }
+            )
+        return ValidationContext(
+            target=target,
+            composition=composition,
+            template_metadata=template_metadata,
+            template_metadata_error=template_error,
+        )
+
+    def _target_for_composition(self, composition: Composition) -> TargetConfig | None:
+        for target in self._targets or []:
+            if target.id == composition.target_id:
+                return target
+        return None
+
+
+    def _show_review_issues(
+        self,
+        issues: tuple[Issue, ...],
+        *,
+        update_action: bool = True,
+    ) -> None:
+        composition = self.selected_composition
+        comp_id = composition.composition_id if composition is not None else ""
+        target_id = composition.target_id if composition is not None else ""
+        self.warnings_panel.set_issues(issues, composition_id=comp_id, target_id=target_id)
+        self.layer_model.set_issues(issues)
+        if update_action and any(issue.blocking for issue in issues):
+            self.action_summary.setText("Không include: cần xử lý lỗi blocking trước.")
+
+    def _handle_issue_jump(self, target_id: str, composition_id: str, layer_id: str) -> None:
+        if composition_id:
+            index = self.tree_model.index_for_composition_id(composition_id)
+            if index.isValid():
+                self.tree_view.setCurrentIndex(index)
+                if layer_id:
+                    self._select_layer_by_id(layer_id)
+            else:
+                self.action_summary.setText("Tham chiếu không còn tồn tại.")
+        elif target_id:
+            self.action_summary.setText("Điều hướng tới target không được hỗ trợ trực tiếp.")
+
+    def _select_layer_by_id(self, layer_id: str) -> None:
+        for row in range(self.layer_model.rowCount()):
+            if self.layer_model.layer_id_for_index(self.layer_model.index(row, 0)) == layer_id:
+                self.layer_table.selectRow(row)
+                return
+
+    def _update_metadata_edit_button(self, *_args) -> None:  # noqa: ANN002
+        layer_id = self.layer_model.layer_id_for_index(self.layer_table.currentIndex())
+        self.edit_metadata_button.setEnabled(
+            layer_id is not None
+            and self._workspace_service is not None
+            and self.selected_composition is not None
+        )
+
+    def _current_layer(self) -> object | None:
+        if self.selected_composition is None:
+            return None
+        layer_id = self.layer_model.layer_id_for_index(self.layer_table.currentIndex())
+        if layer_id is None:
+            return None
+        for layer in self.selected_composition.layers:
+            if layer.layer_id == layer_id:
+                return layer
+        return None
+
+    def _open_metadata_editor(self) -> None:
+        layer = self._current_layer()
+        if layer is None or self._workspace_service is None or self.selected_composition is None:
+            return
+        dialog = MetadataEditorDialog(layer, parent=self)
+        dialog.metadataSaved.connect(self._apply_layer_metadata)
+        dialog.exec()
+
+    def _apply_layer_metadata(self, layer_id: str, payload: dict) -> None:
+        if self._workspace_service is None or self.selected_composition is None:
+            return
+        composition_id = self.selected_composition.composition_id
+        target_id = self.selected_composition.target_id
+        new_date = payload.get("capture_date")
+        candidate_id = (
+            f"{target_id}__{new_date.strftime('%Y%m%d')}" if new_date is not None else None
+        )
+
+        if candidate_id is not None and candidate_id != composition_id:
+            confirmed = self._confirm_date_change(layer_id, composition_id, candidate_id)
+            if not confirmed:
+                self.action_summary.setText("Đã hủy đổi ngày; metadata không được lưu.")
+                return
+            try:
+                updated_source, updated_dest = (
+                    self._workspace_service.move_layer_between_compositions(
+                        composition_id,
+                        layer_id,
+                        new_composition_id=candidate_id,
+                        new_target_id=target_id,
+                        new_capture_date=new_date,
+                        capture_time=payload["capture_time"],
+                        cloud_percent=payload["cloud_percent"],
+                        metadata_source=payload["metadata_source"],
+                        metadata_status=payload["metadata_status"],
+                    )
+                )
+            except WorkspaceError as error:
+                self.action_summary.setText(f"Không di chuyển được layer: {error}")
+                return
+
+            self.selected_composition = updated_dest
+            self._refresh_workspace_projection(
+                updated_dest.composition_id, validate_selection=False
+            )
+            self.action_summary.setText(
+                f"Đã chuyển layer sang {updated_dest.composition_id}; "
+                "cả hai composition cần revalidate."
+            )
+            return
+
+        try:
+            updated = self._workspace_service.update_layer_metadata(
+                composition_id,
+                layer_id,
+                capture_date=payload["capture_date"],
+                capture_time=payload["capture_time"],
+                cloud_percent=payload["cloud_percent"],
+                metadata_source=payload["metadata_source"],
+                metadata_status=payload["metadata_status"],
+            )
+        except WorkspaceError as error:
+            self.action_summary.setText(f"Không lưu được metadata: {error}")
+            return
+
+        self.selected_composition = updated
+        self._update_detail_panels(updated)
+        self._refresh_workspace_projection(updated.composition_id, validate_selection=False)
+        self.action_summary.setText("Đã lưu metadata; composition cần revalidate.")
+
+    def _confirm_date_change(
+        self,
+        layer_id: str,
+        source_composition_id: str,
+        new_composition_id: str,
+    ) -> bool:
+        """Hook for confirmation dialog; overridable by tests to bypass modal exec."""
+        return confirm_date_change_dialog(
+            layer_id, source_composition_id, new_composition_id, parent=self
+        )
+
+    def _advance_after_transition(self, composition_id: str) -> None:
+        next_id = None
+        if self._workspace_service is not None:
+            next_id = self._workspace_service.next_composition_id(composition_id)
+        self._refresh_workspace_projection(next_id or composition_id)
+
+    def _update_review_action_state(self) -> None:
+        has_selection = (
+            self.selected_composition is not None and self._workspace_service is not None
+        )
+        previous_available = False
+        if has_selection and self._workspace_service is not None and self.selected_composition:
+            previous_available = (
+                self._workspace_service.previous_composition_id(
+                    self.selected_composition.composition_id
+                )
+                is not None
+            )
+
+        self.previous_button.setEnabled(previous_available)
+        self.skip_button.setEnabled(has_selection)
+        self.include_validate_button.setEnabled(has_selection)
+        self.revalidate_button.setEnabled(
+            has_selection
+            and self.selected_composition is not None
+            and self.selected_composition.needs_revalidation
+        )
+        if not has_selection:
+            self.action_summary.setText("Chọn composition để dùng review actions.")
+        elif self.selected_composition is not None and self.selected_composition.needs_revalidation:
+            self.action_summary.setText(
+                "Composition cần revalidate trước hoặc trong Include/Validate."
+            )
+        else:
+            self.action_summary.setText("Sẵn sàng: Include/Validate là action chính.")
 
     def _persist_layer_visibility(self, top_left, bottom_right, roles) -> None:  # noqa: ANN001
         if (
@@ -367,14 +751,14 @@ class ReviewEditMode(QWidget):
                 visible=self.layer_model.visible_for_row(top_left.row()),
             )
         except WorkspaceError as error:
-            self.warnings_summary.setText(f"Không lưu được layer: {error}")
+            self.action_summary.setText(f"Không lưu được layer: {error}")
             if self.selected_composition is not None:
                 self.layer_model.set_composition(self.selected_composition)
             return
 
         self.selected_composition = updated
         self._update_detail_panels(updated)
-        self._refresh_workspace_projection(updated.composition_id)
+        self._refresh_workspace_projection(updated.composition_id, validate_selection=False)
 
     def _move_selected_layer(self, offset: int) -> None:
         if self._workspace_service is None or self.layer_model.composition_id is None:
@@ -394,12 +778,12 @@ class ReviewEditMode(QWidget):
                 ordered_layer_ids,
             )
         except WorkspaceError as error:
-            self.warnings_summary.setText(f"Không lưu được thứ tự layer: {error}")
+            self.action_summary.setText(f"Không lưu được thứ tự layer: {error}")
             return
 
         self.selected_composition = updated
         self._update_detail_panels(updated)
-        self._refresh_workspace_projection(updated.composition_id)
+        self._refresh_workspace_projection(updated.composition_id, validate_selection=False)
         new_row = max(0, self.layer_table.currentIndex().row() + offset)
         new_index = self.layer_model.index(new_row, 0)
         if new_index.isValid():
@@ -417,13 +801,13 @@ class ReviewEditMode(QWidget):
                 scale=scale,
             )
         except (WorkspaceError, ValidationError) as error:
-            self.warnings_summary.setText(f"Không lưu được view canvas: {error}")
+            self.action_summary.setText(f"Không lưu được view canvas: {error}")
             self.gis_canvas.set_composition(self.selected_composition)
             return
 
         self.selected_composition = updated
         self._update_detail_panels(updated)
-        self._refresh_workspace_projection(updated.composition_id)
+        self._refresh_workspace_projection(updated.composition_id, validate_selection=False)
 
     def _save_grid_override(self) -> None:
         if self._workspace_service is None or self.selected_composition is None:
@@ -443,14 +827,19 @@ class ReviewEditMode(QWidget):
             self.grid_validation_label.setText(str(error))
             return
         except (WorkspaceError, ValidationError) as error:
-            self.grid_validation_label.setText(f"Không lưu được grid: {error}")
+            self.grid_validation_label.setText(f"KhÃ´ng lÆ°u Ä‘Æ°á»£c grid: {error}")
             return
 
         self.selected_composition = updated
         self._update_detail_panels(updated)
-        self._refresh_workspace_projection(updated.composition_id)
+        self._refresh_workspace_projection(updated.composition_id, validate_selection=False)
 
-    def _refresh_workspace_projection(self, selected_id: str | None) -> None:
+    def _refresh_workspace_projection(
+        self,
+        selected_id: str | None,
+        *,
+        validate_selection: bool = True,
+    ) -> None:
         if self._workspace_service is None:
             return
 
@@ -460,31 +849,37 @@ class ReviewEditMode(QWidget):
         )
         self.tree_view.expandAll()
         self._refresh_filter_controls()
-        self._restore_selection(selected_id)
+        previous_suppression = self._suppress_selection_validation
+        self._suppress_selection_validation = not validate_selection
+        try:
+            self._restore_selection(selected_id)
+        finally:
+            self._suppress_selection_validation = previous_suppression
 
     def _update_detail_panels(self, composition: Composition) -> None:
-        summary = composition.validation_summary
         self.composition_title.setText(
             f"{composition.composition_id} | {composition.capture_date.isoformat()}"
         )
         self.layer_model.set_composition(composition)
         self.layer_warning_label.setVisible(self.layer_model.has_no_visible_layers())
-        self.preview_summary.setText(
-            "Preview cần cập nhật"
-            if composition.needs_revalidation
-            else f"Preview source: {composition.artifacts.preview_render_path or 'chưa render'}"
+        self._update_metadata_edit_button()
+        effective_grid, _grid_source = self._effective_grid_for_composition(composition)
+        self.slide_preview.set_composition(
+            composition,
+            effective_grid=effective_grid,
+            background=self._preview_background_for_composition(composition),
         )
         frame_aspect = self._frame_aspect_for_composition(composition)
         if frame_aspect is not None:
             self.gis_canvas.set_frame_aspect(frame_aspect)
         self.gis_canvas.set_composition(composition)
         self._load_grid_controls(composition)
-        self.warnings_summary.setText(
-            "Validation "
-            f"{composition.persisted_validation_state.value}: "
-            f"{summary.error_count} error, {summary.warning_count} warning, "
-            f"{summary.info_count} info"
+        self.warnings_panel.set_issues(
+            (),
+            composition_id=composition.composition_id,
+            target_id=composition.target_id,
         )
+        self._update_review_action_state()
 
     def _frame_aspect_for_composition(self, composition: Composition) -> float | None:
         for target in self._targets or []:
@@ -501,6 +896,22 @@ class ReviewEditMode(QWidget):
                     return float(width) / float(height)
         return None
 
+    def _preview_background_for_composition(self, composition: Composition) -> dict[str, object]:
+        for target in self._targets or []:
+            if target.id != composition.target_id:
+                continue
+            background = target.metadata.get("preview_background")
+            if isinstance(background, dict):
+                return dict(background)
+            map_background = target.metadata.get("map_background")
+            if isinstance(map_background, dict):
+                return dict(map_background)
+            if isinstance(map_background, str):
+                return {"color": map_background}
+            if isinstance(background, str):
+                return {"color": background}
+        return {}
+
     def _load_grid_controls(self, composition: Composition) -> None:
         grid, source = self._effective_grid_for_composition(composition)
         interval = grid.interval
@@ -514,7 +925,9 @@ class ReviewEditMode(QWidget):
         elif source == "target":
             self.grid_status_label.setText("Đang dùng mặc định target.")
         else:
-            self.grid_status_label.setText("Chưa có cấu hình grid target; dùng mặc định tạm thời.")
+            self.grid_status_label.setText(
+                "Chưa có cấu hình grid target; dùng mặc định tạm thời."
+            )
 
     def _effective_grid_for_composition(self, composition: Composition) -> tuple[GridConfig, str]:
         if composition.grid_override is not None:
@@ -527,9 +940,9 @@ class ReviewEditMode(QWidget):
         return GridConfig(interval=GridInterval(minutes=1), label_format="dms_full"), "fallback"
 
     def _grid_from_inputs(self) -> GridConfig:
-        degrees = _parse_non_negative_int(self.grid_degrees_input.text(), "Độ")
+        degrees = _parse_non_negative_int(self.grid_degrees_input.text(), "Äá»™")
         minutes = _parse_non_negative_int(self.grid_minutes_input.text(), "Phút")
-        seconds = _parse_non_negative_float(self.grid_seconds_input.text(), "Giây")
+        seconds = _parse_non_negative_float(self.grid_seconds_input.text(), "GiÃ¢y")
         base_style: dict[str, object] = {}
         if self.selected_composition is not None:
             base_grid, _source = self._effective_grid_for_composition(self.selected_composition)
@@ -551,7 +964,7 @@ class ReviewEditMode(QWidget):
         except ValidationError as error:
             if degrees == 0 and minutes == 0 and seconds == 0:
                 raise ValueError("Khoảng grid phải lớn hơn 0.") from error
-            raise ValueError(f"Grid không hợp lệ: {error}") from error
+            raise ValueError(f"Grid khÃ´ng há»£p lá»‡: {error}") from error
 
 
 def _is_positive_number(value: object) -> bool:

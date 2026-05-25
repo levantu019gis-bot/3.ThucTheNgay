@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import date, time
 from enum import IntEnum
 from pathlib import PurePath
@@ -9,7 +10,7 @@ from typing import Any
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, Qt
 
-from thucthengay.models import Composition, ImageLayer, MetadataStatus
+from thucthengay.models import Composition, ImageLayer, Issue, IssueSeverity, MetadataStatus
 
 
 class LayerStackColumn(IntEnum):
@@ -21,7 +22,8 @@ class LayerStackColumn(IntEnum):
     CLOUD = 3
     METADATA = 4
     FILENAME = 5
-    ACTIONS = 6
+    ISSUE = 6
+    ACTIONS = 7
 
 
 class LayerStackRole(IntEnum):
@@ -38,12 +40,14 @@ class LayerStackRole(IntEnum):
 class LayerStackModel(QAbstractTableModel):
     """Projection of composition layers for visibility/order review controls."""
 
-    HEADERS = ("Hiện", "Thứ tự", "Thời gian", "Mây", "Metadata", "File", "Menu")
+    HEADERS = ("Hiện", "Thứ tự", "Thời gian", "Mây", "Metadata", "File", "Lỗi", "Menu")
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._composition_id: str | None = None
         self._layers: list[ImageLayer] = []
+        self._layer_issue_severity: dict[str, IssueSeverity] = {}
+        self._layer_issue_messages: dict[str, list[str]] = {}
 
     @property
     def composition_id(self) -> str | None:
@@ -59,7 +63,35 @@ class LayerStackModel(QAbstractTableModel):
             if composition is not None
             else []
         )
+        self._layer_issue_severity = {}
+        self._layer_issue_messages = {}
         self.endResetModel()
+
+    def set_issues(self, issues: Iterable[Issue]) -> None:
+        """Update per-layer issue indicators from current validation issues."""
+        severity_rank = {
+            IssueSeverity.INFO: 1,
+            IssueSeverity.WARNING: 2,
+            IssueSeverity.ERROR: 3,
+        }
+        self._layer_issue_severity = {}
+        self._layer_issue_messages = {}
+        for issue in issues:
+            if issue.layer_id is None:
+                continue
+            lid = issue.layer_id
+            current = self._layer_issue_severity.get(lid)
+            if current is None or severity_rank[issue.severity] > severity_rank[current]:
+                self._layer_issue_severity[lid] = issue.severity
+            msg = issue.message
+            if issue.remediation:
+                msg = f"{msg} — {issue.remediation}"
+            self._layer_issue_messages.setdefault(lid, []).append(msg)
+        if self._layers:
+            self.dataChanged.emit(
+                self.index(0, int(LayerStackColumn.ISSUE)),
+                self.index(len(self._layers) - 1, int(LayerStackColumn.ISSUE)),
+            )
 
     def rowCount(self, _parent: QModelIndex | None = None) -> int:
         return len(self._layers)
@@ -89,8 +121,13 @@ class LayerStackModel(QAbstractTableModel):
         column = LayerStackColumn(index.column())
 
         if role == int(Qt.ItemDataRole.DisplayRole):
+            if column is LayerStackColumn.ISSUE:
+                return _issue_display_text(self._layer_issue_severity.get(layer.layer_id))
             return _display_text(layer, column, index.row())
         if role == int(Qt.ItemDataRole.ToolTipRole):
+            if column is LayerStackColumn.ISSUE:
+                messages = self._layer_issue_messages.get(layer.layer_id)
+                return "\n".join(messages) if messages else None
             return _tooltip(layer)
         if role == int(Qt.ItemDataRole.CheckStateRole) and column is LayerStackColumn.VISIBILITY:
             return Qt.CheckState.Checked if layer.visible else Qt.CheckState.Unchecked
@@ -201,6 +238,16 @@ def _display_text(layer: ImageLayer, column: LayerStackColumn, row: int) -> str:
         return _short_filename(layer.source_path)
     if column is LayerStackColumn.ACTIONS:
         return "..."
+    return ""
+
+
+def _issue_display_text(severity: IssueSeverity | None) -> str:
+    if severity is IssueSeverity.ERROR:
+        return "✗ ERROR"
+    if severity is IssueSeverity.WARNING:
+        return "⚠ WARN"
+    if severity is IssueSeverity.INFO:
+        return "ℹ INFO"
     return ""
 
 

@@ -17,6 +17,8 @@ from thucthengay.models import (
     GridConfig,
     GridInterval,
     ImageLayer,
+    MetadataSource,
+    MetadataStatus,
     ValidationSummary,
     ViewState,
     WorkspaceManifest,
@@ -236,6 +238,130 @@ class WorkspaceService:
         )
         self.write_composition(updated)
         return updated
+
+    def update_layer_metadata(
+        self,
+        composition_id: str,
+        layer_id: str,
+        *,
+        capture_date: Any,
+        capture_time: Any,
+        cloud_percent: float | None,
+        metadata_source: MetadataSource,
+        metadata_status: MetadataStatus,
+    ) -> Composition:
+        """Persist manual layer metadata correction and mark composition stale."""
+        composition = self.read_composition(composition_id)
+        found = False
+        updated_layers: list[ImageLayer] = []
+        for layer in composition.layers:
+            if layer.layer_id == layer_id:
+                found = True
+                updated_layers.append(
+                    layer.model_copy(
+                        update={
+                            "capture_date": capture_date,
+                            "capture_time": capture_time,
+                            "cloud_percent": cloud_percent,
+                            "metadata_source": metadata_source,
+                            "metadata_status": metadata_status,
+                        }
+                    )
+                )
+            else:
+                updated_layers.append(layer)
+
+        if not found:
+            msg = f"Layer not found in composition {composition_id}: {layer_id}"
+            raise WorkspaceError(msg)
+
+        updated = _mark_composition_edit_stale(
+            _validated_composition_update(composition, {"layers": updated_layers})
+        )
+        self.write_composition(updated)
+        return updated
+
+    def move_layer_between_compositions(
+        self,
+        source_composition_id: str,
+        layer_id: str,
+        *,
+        new_composition_id: str,
+        new_target_id: str,
+        new_capture_date: Any,
+        capture_time: Any,
+        cloud_percent: float | None,
+        metadata_source: MetadataSource,
+        metadata_status: MetadataStatus,
+    ) -> tuple[Composition, Composition]:
+        """Move a layer from one composition to another (creating dest if needed)."""
+        if new_capture_date is None:
+            msg = "Cần có capture_date để xác định composition đích."
+            raise WorkspaceError(msg)
+
+        source = self.read_composition(source_composition_id)
+        moved_layer: ImageLayer | None = None
+        remaining_layers: list[ImageLayer] = []
+        for layer in source.layers:
+            if layer.layer_id == layer_id:
+                moved_layer = layer
+            else:
+                remaining_layers.append(layer)
+
+        if moved_layer is None:
+            msg = f"Layer not found in composition {source_composition_id}: {layer_id}"
+            raise WorkspaceError(msg)
+
+        try:
+            destination = self.read_composition(new_composition_id)
+        except WorkspaceError:
+            destination = Composition(
+                composition_id=new_composition_id,
+                target_id=new_target_id,
+                capture_date=new_capture_date,
+                view=source.view,
+                layers=[],
+            )
+
+        dest_layers = list(destination.layers)
+        updated_layer = moved_layer.model_copy(
+            update={
+                "capture_date": new_capture_date,
+                "capture_time": capture_time,
+                "cloud_percent": cloud_percent,
+                "metadata_source": metadata_source,
+                "metadata_status": metadata_status,
+                "order": len(dest_layers),
+            }
+        )
+        dest_layers.append(updated_layer)
+        updated_destination = _mark_composition_edit_stale(
+            _validated_composition_update(destination, {"layers": dest_layers})
+        )
+        updated_source = _mark_composition_edit_stale(
+            _validated_composition_update(source, {"layers": remaining_layers})
+        )
+
+        try:
+            self.write_composition(updated_destination)
+        except (WorkspaceError, OSError, ValueError) as error:
+            msg = (
+                f"Không ghi được composition đích {new_composition_id}: {error}. "
+                "Vui lòng kiểm tra workspace và thử lại."
+            )
+            raise WorkspaceError(msg) from error
+
+        try:
+            self.write_composition(updated_source)
+        except (WorkspaceError, OSError, ValueError) as error:
+            msg = (
+                f"Đã ghi composition đích nhưng không cập nhật được nguồn "
+                f"{source_composition_id}: {error}. Vui lòng kiểm tra workspace; "
+                f"layer hiện tồn tại ở cả hai composition cho đến khi sửa thủ công."
+            )
+            raise WorkspaceError(msg) from error
+
+        return updated_source, updated_destination
 
     def reorder_layers(
         self,

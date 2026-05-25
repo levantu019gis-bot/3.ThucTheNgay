@@ -1,5 +1,5 @@
 # generated: 2026-05-24
-# last_updated: 2026-05-25
+# last_updated: 2026-05-25  # 5-1 + 5-2 review
 # project: 3.ThucTheNgay
 # project_key: NOKEY
 # tracking_system: file-system
@@ -59,26 +59,26 @@ development_status:
   2-5-run-ingestion-as-progress-job: done
   2-6-show-ingestion-summary-and-warnings: done
   epic-2-retrospective: optional
-  epic-3: in-progress
+  epic-3: done
   3-1-build-review-edit-layout-and-composition-tree: done
   3-2-add-queue-filters-and-empty-states: done
   3-3-implement-layer-stack-controls: done
   3-4-implement-gis-editor-canvas-view-controls: done
   3-5-implement-per-composition-grid-override-controls: done
-  3-6-implement-slide-preview-panel-with-debounced-updates: backlog
-  3-7-implement-review-action-bar-and-keyboard-workflow: backlog
+  3-6-implement-slide-preview-panel-with-debounced-updates: done
+  3-7-implement-review-action-bar-and-keyboard-workflow: done
   epic-3-retrospective: optional
-  epic-4: backlog
-  4-1-define-validation-engine-and-issue-schema: backlog
-  4-2-validate-composition-readiness-rules: backlog
-  4-3-run-validation-on-select-include-and-export-preflight: backlog
-  4-4-surface-issues-in-tree-layer-ui-and-warnings-panel: backlog
-  4-5-implement-metadata-editor-for-capture-date-time-correction: backlog
-  4-6-confirm-cache-move-when-corrected-date-changes: backlog
+  epic-4: in-progress
+  4-1-define-validation-engine-and-issue-schema: done
+  4-2-validate-composition-readiness-rules: done
+  4-3-run-validation-on-select-include-and-export-preflight: done
+  4-4-surface-issues-in-tree-layer-ui-and-warnings-panel: review
+  4-5-implement-metadata-editor-for-capture-date-time-correction: review
+  4-6-confirm-cache-move-when-corrected-date-changes: review
   epic-4-retrospective: optional
-  epic-5: backlog
-  5-1-build-shared-render-specification-from-composition-state: backlog
-  5-2-implement-raster-window-and-crs-transform-rendering-core: backlog
+  epic-5: in-progress
+  5-1-build-shared-render-specification-from-composition-state: review
+  5-2-implement-raster-window-and-crs-transform-rendering-core: review
   5-3-render-grid-and-map-background-without-mvp-extras: backlog
   5-4-implement-two-stage-preview-rendering-jobs: backlog
   5-5-implement-final-png-rendering-and-render-log: backlog

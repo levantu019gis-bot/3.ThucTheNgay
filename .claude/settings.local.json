@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 \"D:\\\\TU_KXOA\\\\5.TTN\\\\gis_ttn\\\\_bmad\\\\scripts\\\\resolve_customization.py\" --skill \"D:\\\\TU_KXOA\\\\5.TTN\\\\gis_ttn\\\\.claude\\\\skills\\\\bmad-dev-story\" --key workflow)",
+      "PowerShell(conda run *)"
+    ]
+  }
+}
