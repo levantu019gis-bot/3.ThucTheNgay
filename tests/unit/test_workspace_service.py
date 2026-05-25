@@ -9,6 +9,8 @@ from pydantic import ValidationError
 
 from thucthengay.models import (
     Composition,
+    GridConfig,
+    GridInterval,
     ImageLayer,
     MetadataStatus,
     PersistedValidationState,
@@ -415,6 +417,90 @@ def test_update_view_state_invalid_values_do_not_write(tmp_path: Path) -> None:
     reloaded = service.read_composition("target_001__20260525")
     assert reloaded.view.center == [106.7, 10.8]
     assert reloaded.view.scale == 50000
+
+
+def test_update_grid_override_persists_only_composition_and_marks_stale(
+    tmp_path: Path,
+) -> None:
+    service = WorkspaceService(tmp_path / "workspace")
+    service.initialize(config_path="config.json")
+    service.write_composition(
+        valid_composition().model_copy(
+            update={
+                "layers": [layer("old", order=0)],
+                "ready": True,
+                "include": True,
+                "needs_revalidation": False,
+                "review_order": 5,
+                "validation_summary": ValidationSummary(warning_count=1),
+            }
+        )
+    )
+    target_default = GridConfig(interval=GridInterval(minutes=1))
+
+    updated = service.update_grid_override(
+        "target_001__20260525",
+        degrees=0,
+        minutes=2,
+        seconds=30,
+        label_format="dms_short",
+        style={"color": "white"},
+    )
+
+    assert updated.grid_override is not None
+    assert updated.grid_override.interval.minutes == 2
+    assert updated.grid_override.interval.seconds == 30
+    assert updated.grid_override.label_format == "dms_short"
+    assert updated.grid_override.style == {"color": "white"}
+    assert updated.needs_revalidation is True
+    assert updated.ready is False
+    assert updated.include is False
+    assert updated.review_order is None
+    assert updated.validation_summary.warning_count == 1
+    assert updated.layers[0].layer_id == "old"
+    assert target_default.interval.minutes == 1
+
+    raw = json.loads(
+        service.paths.composition_file("target_001__20260525").read_text(encoding="utf-8")
+    )
+    assert raw["grid_override"]["interval"]["minutes"] == 2
+    assert raw["grid_override"]["label_format"] == "dms_short"
+
+
+def test_update_grid_override_invalid_values_do_not_write(tmp_path: Path) -> None:
+    service = WorkspaceService(tmp_path / "workspace")
+    service.initialize(config_path="config.json")
+    service.write_composition(
+        valid_composition().model_copy(
+            update={
+                "grid_override": GridConfig(
+                    interval=GridInterval(minutes=1),
+                    label_format="dms_full",
+                ),
+                "ready": True,
+                "include": True,
+                "needs_revalidation": False,
+                "review_order": 2,
+            }
+        )
+    )
+
+    with pytest.raises(ValidationError):
+        service.update_grid_override(
+            "target_001__20260525",
+            degrees=0,
+            minutes=0,
+            seconds=0,
+            label_format="dms_full",
+        )
+
+    reloaded = service.read_composition("target_001__20260525")
+    assert reloaded.grid_override is not None
+    assert reloaded.grid_override.interval.minutes == 1
+    assert reloaded.ready is True
+    assert reloaded.include is True
+    assert reloaded.needs_revalidation is False
+    assert reloaded.review_order == 2
 
 
 def test_reloaded_validation_summary_provides_aggregate_counts_and_state(

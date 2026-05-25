@@ -64,7 +64,7 @@ development_status:
   3-2-add-queue-filters-and-empty-states: done
   3-3-implement-layer-stack-controls: done
   3-4-implement-gis-editor-canvas-view-controls: done
-  3-5-implement-per-composition-grid-override-controls: backlog
+  3-5-implement-per-composition-grid-override-controls: done
   3-6-implement-slide-preview-panel-with-debounced-updates: backlog
   3-7-implement-review-action-bar-and-keyboard-workflow: backlog
   epic-3-retrospective: optional

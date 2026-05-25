@@ -528,6 +528,101 @@ def test_review_edit_gis_canvas_saves_pan_zoom_and_marks_preview_stale(
     ) == "Cần kiểm tra lại"
 
 
+def test_review_edit_grid_controls_show_defaults_save_override_and_mark_stale(
+    tmp_path: Path,
+) -> None:
+    qapp()
+    service = WorkspaceService(tmp_path / "workspace")
+    service.initialize(config_path="config.json")
+    service.write_composition(
+        composition(
+            "alpha__20260525",
+            "alpha",
+            date(2026, 5, 25),
+            ready=True,
+            include=True,
+            needs_revalidation=False,
+            review_order=3,
+        )
+    )
+    target = target_config("alpha", sort_order=1, name="Alpha Target").model_copy(
+        update={
+            "grid": GridConfig(
+                interval=GridInterval(minutes=1),
+                label_format="dms_full",
+                style={"color": "white"},
+            )
+        }
+    )
+
+    mode = ReviewEditMode()
+    mode.load_workspace(service, targets=[target])
+    target_index = mode.tree_model.index(0, 0)
+    mode.tree_view.setCurrentIndex(mode.tree_model.index(0, 0, target_index))
+
+    assert mode.grid_degrees_input.text() == "0"
+    assert mode.grid_minutes_input.text() == "1"
+    assert mode.grid_seconds_input.text() == "0"
+    assert mode.grid_label_format_input.text() == "dms_full"
+    assert "mặc định target" in mode.grid_status_label.text()
+
+    mode.grid_minutes_input.setText("2")
+    mode.grid_seconds_input.setText("30")
+    mode.grid_label_format_input.setText("dms_short")
+    mode.save_grid_button.click()
+
+    reloaded = service.read_composition("alpha__20260525")
+    assert reloaded.grid_override is not None
+    assert reloaded.grid_override.interval.minutes == 2
+    assert reloaded.grid_override.interval.seconds == 30
+    assert reloaded.grid_override.label_format == "dms_short"
+    assert reloaded.grid_override.style == {"color": "white"}
+    assert reloaded.needs_revalidation is True
+    assert reloaded.ready is False
+    assert reloaded.include is False
+    assert reloaded.review_order is None
+    assert target.grid.interval.minutes == 1
+    assert "override" in mode.grid_status_label.text()
+    assert "Preview cần cập nhật" in mode.preview_summary.text()
+    assert mode.tree_model.index_for_composition_id("alpha__20260525").data(
+        CompositionTreeRole.STATUS_TEXT
+    ) == "Cần kiểm tra lại"
+
+
+def test_review_edit_grid_controls_reject_invalid_values_without_write(
+    tmp_path: Path,
+) -> None:
+    qapp()
+    service = WorkspaceService(tmp_path / "workspace")
+    service.initialize(config_path="config.json")
+    service.write_composition(
+        composition("alpha__20260525", "alpha", date(2026, 5, 25)).model_copy(
+            update={
+                "grid_override": GridConfig(
+                    interval=GridInterval(minutes=1),
+                    label_format="dms_full",
+                )
+            }
+        )
+    )
+
+    mode = ReviewEditMode()
+    mode.load_workspace(
+        service,
+        targets=[target_config("alpha", sort_order=1, name="Alpha Target")],
+    )
+    target_index = mode.tree_model.index(0, 0)
+    mode.tree_view.setCurrentIndex(mode.tree_model.index(0, 0, target_index))
+
+    mode.grid_minutes_input.setText("60")
+    mode.save_grid_button.click()
+
+    reloaded = service.read_composition("alpha__20260525")
+    assert reloaded.grid_override is not None
+    assert reloaded.grid_override.interval.minutes == 1
+    assert "Phút phải nhỏ hơn 60" in mode.grid_validation_label.text()
+
+
 def test_review_edit_filter_bar_counts_empty_state_and_selection_restore(
     tmp_path: Path,
 ) -> None:

@@ -8,9 +8,11 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QButtonGroup,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QPushButton,
     QSplitter,
     QTableView,
@@ -26,7 +28,7 @@ from thucthengay.editor.models.composition_tree_model import (
 )
 from thucthengay.editor.models.layer_stack_model import LayerStackColumn, LayerStackModel
 from thucthengay.editor.widgets import GisCanvasWidget
-from thucthengay.models import Composition, TargetConfig
+from thucthengay.models import Composition, GridConfig, GridInterval, TargetConfig
 from thucthengay.workspace import WorkspaceError, WorkspaceService
 
 
@@ -109,6 +111,31 @@ class ReviewEditMode(QWidget):
         self.layer_warning_label.setWordWrap(True)
         self.layer_warning_label.setVisible(False)
 
+        self.grid_degrees_input = QLineEdit("0")
+        self.grid_degrees_input.setObjectName("reviewGridDegrees")
+        self.grid_degrees_input.setFixedWidth(56)
+        self.grid_degrees_input.setToolTip("Độ của khoảng grid")
+        self.grid_minutes_input = QLineEdit("0")
+        self.grid_minutes_input.setObjectName("reviewGridMinutes")
+        self.grid_minutes_input.setFixedWidth(56)
+        self.grid_minutes_input.setToolTip("Phút của khoảng grid")
+        self.grid_seconds_input = QLineEdit("0")
+        self.grid_seconds_input.setObjectName("reviewGridSeconds")
+        self.grid_seconds_input.setFixedWidth(64)
+        self.grid_seconds_input.setToolTip("Giây của khoảng grid")
+        self.grid_label_format_input = QLineEdit("dms_full")
+        self.grid_label_format_input.setObjectName("reviewGridLabelFormat")
+        self.grid_label_format_input.setToolTip("Định dạng nhãn grid")
+        self.grid_status_label = QLabel("Chưa chọn composition.")
+        self.grid_status_label.setObjectName("reviewGridStatus")
+        self.grid_status_label.setWordWrap(True)
+        self.grid_validation_label = QLabel("")
+        self.grid_validation_label.setObjectName("reviewGridValidation")
+        self.grid_validation_label.setWordWrap(True)
+        self.save_grid_button = QPushButton("Lưu grid")
+        self.save_grid_button.setObjectName("reviewGridSave")
+        self.save_grid_button.clicked.connect(self._save_grid_override)
+
         self.preview_summary = QLabel("Slide preview sẽ hiển thị ở story 3.6.")
         self.preview_summary.setObjectName("reviewPreviewSummary")
         self.preview_summary.setWordWrap(True)
@@ -172,6 +199,7 @@ class ReviewEditMode(QWidget):
         layout.addWidget(self.tree_view, 3)
         layout.addWidget(self.empty_state_label)
         layout.addWidget(self._build_layer_panel(), 2)
+        layout.addWidget(self._build_grid_panel(), 1)
         layout.addWidget(self._panel_frame("Slide preview", self.preview_summary), 1)
         return panel
 
@@ -233,6 +261,37 @@ class ReviewEditMode(QWidget):
         layout.addLayout(toolbar)
         layout.addWidget(self.layer_table, 1)
         layout.addWidget(self.layer_warning_label)
+        return frame
+
+    def _build_grid_panel(self) -> QFrame:
+        frame = QFrame()
+        frame.setFrameShape(QFrame.Shape.StyledPanel)
+        frame.setMinimumHeight(152)
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(6)
+
+        header = QHBoxLayout()
+        header.addWidget(QLabel("Grid interval"))
+        header.addStretch(1)
+        header.addWidget(self.save_grid_button)
+
+        fields = QGridLayout()
+        fields.setHorizontalSpacing(6)
+        fields.setVerticalSpacing(4)
+        fields.addWidget(QLabel("Độ"), 0, 0)
+        fields.addWidget(self.grid_degrees_input, 0, 1)
+        fields.addWidget(QLabel("Phút"), 0, 2)
+        fields.addWidget(self.grid_minutes_input, 0, 3)
+        fields.addWidget(QLabel("Giây"), 0, 4)
+        fields.addWidget(self.grid_seconds_input, 0, 5)
+        fields.addWidget(QLabel("Label"), 1, 0)
+        fields.addWidget(self.grid_label_format_input, 1, 1, 1, 5)
+
+        layout.addLayout(header)
+        layout.addLayout(fields)
+        layout.addWidget(self.grid_status_label)
+        layout.addWidget(self.grid_validation_label)
         return frame
 
     def _apply_queue_filter(self, queue_filter: QueueFilter) -> None:
@@ -366,6 +425,31 @@ class ReviewEditMode(QWidget):
         self._update_detail_panels(updated)
         self._refresh_workspace_projection(updated.composition_id)
 
+    def _save_grid_override(self) -> None:
+        if self._workspace_service is None or self.selected_composition is None:
+            return
+
+        try:
+            grid = self._grid_from_inputs()
+            updated = self._workspace_service.update_grid_override(
+                self.selected_composition.composition_id,
+                degrees=grid.interval.degrees,
+                minutes=grid.interval.minutes,
+                seconds=grid.interval.seconds,
+                label_format=grid.label_format,
+                style=grid.style,
+            )
+        except ValueError as error:
+            self.grid_validation_label.setText(str(error))
+            return
+        except (WorkspaceError, ValidationError) as error:
+            self.grid_validation_label.setText(f"Không lưu được grid: {error}")
+            return
+
+        self.selected_composition = updated
+        self._update_detail_panels(updated)
+        self._refresh_workspace_projection(updated.composition_id)
+
     def _refresh_workspace_projection(self, selected_id: str | None) -> None:
         if self._workspace_service is None:
             return
@@ -394,6 +478,7 @@ class ReviewEditMode(QWidget):
         if frame_aspect is not None:
             self.gis_canvas.set_frame_aspect(frame_aspect)
         self.gis_canvas.set_composition(composition)
+        self._load_grid_controls(composition)
         self.warnings_summary.setText(
             "Validation "
             f"{composition.persisted_validation_state.value}: "
@@ -416,6 +501,85 @@ class ReviewEditMode(QWidget):
                     return float(width) / float(height)
         return None
 
+    def _load_grid_controls(self, composition: Composition) -> None:
+        grid, source = self._effective_grid_for_composition(composition)
+        interval = grid.interval
+        self.grid_degrees_input.setText(str(interval.degrees))
+        self.grid_minutes_input.setText(str(interval.minutes))
+        self.grid_seconds_input.setText(_format_number(interval.seconds))
+        self.grid_label_format_input.setText(grid.label_format or "dms_full")
+        self.grid_validation_label.setText("")
+        if source == "override":
+            self.grid_status_label.setText("Đang dùng grid override của composition.")
+        elif source == "target":
+            self.grid_status_label.setText("Đang dùng mặc định target.")
+        else:
+            self.grid_status_label.setText("Chưa có cấu hình grid target; dùng mặc định tạm thời.")
+
+    def _effective_grid_for_composition(self, composition: Composition) -> tuple[GridConfig, str]:
+        if composition.grid_override is not None:
+            return composition.grid_override, "override"
+
+        for target in self._targets or []:
+            if target.id == composition.target_id:
+                return target.grid, "target"
+
+        return GridConfig(interval=GridInterval(minutes=1), label_format="dms_full"), "fallback"
+
+    def _grid_from_inputs(self) -> GridConfig:
+        degrees = _parse_non_negative_int(self.grid_degrees_input.text(), "Độ")
+        minutes = _parse_non_negative_int(self.grid_minutes_input.text(), "Phút")
+        seconds = _parse_non_negative_float(self.grid_seconds_input.text(), "Giây")
+        base_style: dict[str, object] = {}
+        if self.selected_composition is not None:
+            base_grid, _source = self._effective_grid_for_composition(self.selected_composition)
+            base_style = dict(base_grid.style)
+        if minutes >= 60:
+            raise ValueError("Phút phải nhỏ hơn 60.")
+        if seconds >= 60:
+            raise ValueError("Giây phải nhỏ hơn 60.")
+        try:
+            return GridConfig(
+                interval=GridInterval(
+                    degrees=degrees,
+                    minutes=minutes,
+                    seconds=seconds,
+                ),
+                label_format=self.grid_label_format_input.text().strip() or "dms_full",
+                style=base_style,
+            )
+        except ValidationError as error:
+            if degrees == 0 and minutes == 0 and seconds == 0:
+                raise ValueError("Khoảng grid phải lớn hơn 0.") from error
+            raise ValueError(f"Grid không hợp lệ: {error}") from error
+
 
 def _is_positive_number(value: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+
+
+def _parse_non_negative_int(raw: str, label: str) -> int:
+    try:
+        value = int(raw.strip())
+    except ValueError as error:
+        raise ValueError(f"{label} phải là số nguyên không âm.") from error
+    if value < 0:
+        raise ValueError(f"{label} phải là số không âm.")
+    return value
+
+
+def _parse_non_negative_float(raw: str, label: str) -> float:
+    try:
+        value = float(raw.strip())
+    except ValueError as error:
+        raise ValueError(f"{label} phải là số không âm.") from error
+    if value < 0:
+        raise ValueError(f"{label} phải là số không âm.")
+    return value
+
+
+def _format_number(value: float | int) -> str:
+    numeric = float(value)
+    if numeric.is_integer():
+        return str(int(numeric))
+    return f"{numeric:g}"

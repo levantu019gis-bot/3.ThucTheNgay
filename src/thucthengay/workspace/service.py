@@ -8,11 +8,14 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from json import JSONDecodeError
 from pathlib import Path
+from typing import Any
 
 from pydantic import ValidationError
 
 from thucthengay.models import (
     Composition,
+    GridConfig,
+    GridInterval,
     ImageLayer,
     ValidationSummary,
     ViewState,
@@ -270,6 +273,33 @@ class WorkspaceService:
         view = ViewState(center=center, scale=scale, rotation=0)
         updated = _mark_composition_edit_stale(
             _validated_composition_update(composition, {"view": view})
+        )
+        self.write_composition(updated)
+        return updated
+
+    def update_grid_override(
+        self,
+        composition_id: str,
+        *,
+        degrees: int,
+        minutes: int,
+        seconds: float,
+        label_format: str = "dms_full",
+        style: dict[str, Any] | None = None,
+    ) -> Composition:
+        """Persist per-composition grid override and mark the composition stale."""
+        composition = self.read_composition(composition_id)
+        grid_override = GridConfig(
+            interval=GridInterval(
+                degrees=degrees,
+                minutes=minutes,
+                seconds=seconds,
+            ),
+            label_format=label_format.strip() or "dms_full",
+            style=dict(style or {}),
+        )
+        updated = _mark_composition_edit_stale(
+            _validated_composition_update(composition, {"grid_override": grid_override})
         )
         self.write_composition(updated)
         return updated
