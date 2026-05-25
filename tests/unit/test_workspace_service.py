@@ -9,6 +9,8 @@ from pydantic import ValidationError
 
 from thucthengay.models import (
     Composition,
+    ImageLayer,
+    MetadataStatus,
     PersistedValidationState,
     ValidationSummary,
     ViewState,
@@ -23,6 +25,16 @@ def valid_composition(composition_id: str = "target_001__20260525") -> Compositi
         target_id="target_001",
         capture_date=date(2026, 5, 25),
         view=ViewState(center=[106.7, 10.8], scale=50000),
+    )
+
+
+def layer(layer_id: str, *, order: int, visible: bool = True) -> ImageLayer:
+    return ImageLayer(
+        layer_id=layer_id,
+        source_path=f"/imagery/{layer_id}.tif",
+        visible=visible,
+        order=order,
+        metadata_status=MetadataStatus.VALID,
     )
 
 
@@ -257,6 +269,152 @@ def test_mark_needs_revalidation_makes_prior_summary_stale_and_unincludes(
     assert stale.review_order is None
     assert stale.validation_summary.warning_count == 1
     assert stale.persisted_validation_state == PersistedValidationState.STALE
+
+
+def test_set_layer_visibility_persists_and_marks_composition_stale(tmp_path: Path) -> None:
+    service = WorkspaceService(tmp_path / "workspace")
+    service.initialize(config_path="config.json")
+    service.write_composition(
+        valid_composition().model_copy(
+            update={
+                "layers": [layer("old", order=0), layer("new", order=1)],
+                "reviewed": True,
+                "ready": True,
+                "include": True,
+                "needs_revalidation": False,
+                "review_order": 3,
+            }
+        )
+    )
+
+    updated = service.set_layer_visibility("target_001__20260525", "old", visible=False)
+
+    assert updated.layers[0].visible is False
+    assert updated.layers[1].visible is True
+    assert updated.needs_revalidation is True
+    assert updated.ready is False
+    assert updated.include is False
+    assert updated.review_order is None
+
+    reloaded = WorkspaceService(tmp_path / "workspace").read_composition("target_001__20260525")
+    assert reloaded.layers[0].visible is False
+
+
+def test_set_layer_visibility_unknown_layer_does_not_write(tmp_path: Path) -> None:
+    service = WorkspaceService(tmp_path / "workspace")
+    service.initialize(config_path="config.json")
+    service.write_composition(
+        valid_composition().model_copy(update={"layers": [layer("old", order=0)]})
+    )
+
+    with pytest.raises(Exception, match="Layer not found"):
+        service.set_layer_visibility("target_001__20260525", "missing", visible=False)
+
+    assert service.read_composition("target_001__20260525").layers[0].visible is True
+
+
+def test_reorder_layers_persists_normalized_order_and_marks_stale(tmp_path: Path) -> None:
+    service = WorkspaceService(tmp_path / "workspace")
+    service.initialize(config_path="config.json")
+    service.write_composition(
+        valid_composition().model_copy(
+            update={
+                "layers": [layer("old", order=0), layer("new", order=1), layer("third", order=2)],
+                "ready": True,
+                "include": True,
+                "needs_revalidation": False,
+                "review_order": 4,
+            }
+        )
+    )
+
+    updated = service.reorder_layers(
+        "target_001__20260525",
+        ["third", "old", "new"],
+    )
+
+    assert [layer.layer_id for layer in updated.layers] == ["third", "old", "new"]
+    assert [layer.order for layer in updated.layers] == [0, 1, 2]
+    assert updated.needs_revalidation is True
+    assert updated.ready is False
+    assert updated.include is False
+    assert updated.review_order is None
+
+
+def test_reorder_layers_requires_all_layers_exactly_once(tmp_path: Path) -> None:
+    service = WorkspaceService(tmp_path / "workspace")
+    service.initialize(config_path="config.json")
+    service.write_composition(
+        valid_composition().model_copy(
+            update={"layers": [layer("old", order=0), layer("new", order=1)]}
+        )
+    )
+
+    with pytest.raises(Exception, match="exactly once"):
+        service.reorder_layers("target_001__20260525", ["new"])
+
+    layer_ids = [
+        layer.layer_id
+        for layer in service.read_composition("target_001__20260525").layers
+    ]
+    assert layer_ids == [
+        "old",
+        "new",
+    ]
+
+
+def test_update_view_state_persists_and_marks_composition_stale(tmp_path: Path) -> None:
+    service = WorkspaceService(tmp_path / "workspace")
+    service.initialize(config_path="config.json")
+    service.write_composition(
+        valid_composition().model_copy(
+            update={
+                "layers": [layer("old", order=0)],
+                "ready": True,
+                "include": True,
+                "needs_revalidation": False,
+                "review_order": 5,
+                "validation_summary": ValidationSummary(warning_count=1),
+            }
+        )
+    )
+
+    updated = service.update_view_state(
+        "target_001__20260525",
+        center=[106.75, 10.85],
+        scale=25000,
+    )
+
+    assert updated.view.center == [106.75, 10.85]
+    assert updated.view.scale == 25000
+    assert updated.view.rotation == 0
+    assert updated.needs_revalidation is True
+    assert updated.ready is False
+    assert updated.include is False
+    assert updated.review_order is None
+    assert updated.validation_summary.warning_count == 1
+    assert updated.layers[0].layer_id == "old"
+
+    reloaded = service.read_composition("target_001__20260525")
+    assert reloaded.view.center == [106.75, 10.85]
+    assert reloaded.view.scale == 25000
+
+
+def test_update_view_state_invalid_values_do_not_write(tmp_path: Path) -> None:
+    service = WorkspaceService(tmp_path / "workspace")
+    service.initialize(config_path="config.json")
+    service.write_composition(valid_composition())
+
+    with pytest.raises(ValidationError):
+        service.update_view_state(
+            "target_001__20260525",
+            center=[999, 10.85],
+            scale=25000,
+        )
+
+    reloaded = service.read_composition("target_001__20260525")
+    assert reloaded.view.center == [106.7, 10.8]
+    assert reloaded.view.scale == 50000
 
 
 def test_reloaded_validation_summary_provides_aggregate_counts_and_state(

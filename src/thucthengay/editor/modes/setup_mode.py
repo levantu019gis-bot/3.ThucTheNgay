@@ -8,8 +8,10 @@ from pathlib import Path
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QFormLayout, QPushButton, QVBoxLayout, QWidget
 
+from thucthengay.editor.widgets.ingestion_summary import IngestionSummaryWidget
 from thucthengay.editor.widgets.path_picker import PathKind, PathPickerRow
 from thucthengay.editor.widgets.workspace_confirmation import confirm_workspace_clear
+from thucthengay.jobs import IngestionSummary
 from thucthengay.workspace import WorkspaceService
 
 
@@ -34,6 +36,7 @@ class SetupMode(QWidget):
         self.workspace_row = PathPickerRow("Workspace", PathKind.WORKSPACE_FOLDER)
         self.ingest_button = QPushButton("Lấy dữ liệu")
         self.ingest_button.setObjectName("setupIngestButton")
+        self.summary_widget = IngestionSummaryWidget()
 
         form = QFormLayout()
         form.setContentsMargins(0, 0, 0, 0)
@@ -46,6 +49,7 @@ class SetupMode(QWidget):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(14)
         layout.addLayout(form)
+        layout.addWidget(self.summary_widget)
         layout.addStretch(1)
         layout.addWidget(self.ingest_button)
 
@@ -103,3 +107,7 @@ class SetupMode(QWidget):
                 return
 
         self.ingestRequested.emit(selected_paths)
+
+    def show_ingestion_summary(self, summary: IngestionSummary) -> None:
+        """Show the latest ingestion summary in Setup mode."""
+        self.summary_widget.show_summary(summary)

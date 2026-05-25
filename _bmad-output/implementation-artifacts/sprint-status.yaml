@@ -51,19 +51,19 @@ development_status:
   1-6-persist-composition-status-and-review-state: done
   1-7-persist-validation-summary-and-revalidation-state: done
   epic-1-retrospective: optional
-  epic-2: backlog
-  2-1-scan-imagery-folder-and-extract-geotiff-metadata: backlog
-  2-2-match-imagery-to-enabled-target-boundaries: backlog
-  2-3-copy-matched-imagery-into-workspace-cache: backlog
-  2-4-create-target-date-composition-json-files: backlog
-  2-5-run-ingestion-as-progress-job: backlog
-  2-6-show-ingestion-summary-and-warnings: backlog
+  epic-2: done
+  2-1-scan-imagery-folder-and-extract-geotiff-metadata: done
+  2-2-match-imagery-to-enabled-target-boundaries: done
+  2-3-copy-matched-imagery-into-workspace-cache: done
+  2-4-create-target-date-composition-json-files: done
+  2-5-run-ingestion-as-progress-job: done
+  2-6-show-ingestion-summary-and-warnings: done
   epic-2-retrospective: optional
-  epic-3: backlog
-  3-1-build-review-edit-layout-and-composition-tree: backlog
-  3-2-add-queue-filters-and-empty-states: backlog
-  3-3-implement-layer-stack-controls: backlog
-  3-4-implement-gis-editor-canvas-view-controls: backlog
+  epic-3: in-progress
+  3-1-build-review-edit-layout-and-composition-tree: done
+  3-2-add-queue-filters-and-empty-states: done
+  3-3-implement-layer-stack-controls: done
+  3-4-implement-gis-editor-canvas-view-controls: done
   3-5-implement-per-composition-grid-override-controls: backlog
   3-6-implement-slide-preview-panel-with-debounced-updates: backlog
   3-7-implement-review-action-bar-and-keyboard-workflow: backlog

@@ -8,10 +8,11 @@ sections_completed:
   - framework_rules
   - testing_rules
   - quality_rules
+  - autonomous_execution_rules
   - workflow_rules
   - anti_patterns
 status: 'complete'
-rule_count: 34
+rule_count: 37
 optimized_for_llm: true
 ---
 
@@ -105,6 +106,12 @@ _File này chứa các quy tắc bắt buộc AI agents phải đọc trước k
 - Comments chỉ dùng khi giải thích logic không hiển nhiên; không thêm comment mô tả lại dòng code.
 - Code phải nhỏ và phân tách rõ module/function/file; một function chỉ nên có một trách nhiệm chính.
 - Không thêm abstraction nếu chưa giảm được complexity thật hoặc chưa khớp pattern đã có.
+
+### Autonomous Epic Execution Mandate
+
+- Khi người dùng giao nhiệm vụ tiếp tục xây dựng dự án theo BMad story plan, Codex phải tự động thực hiện trọn vòng `code -> check -> fix -> review -> update artifacts` cho từng story theo thứ tự trong sprint status.
+- Codex không dừng ở bước review hoặc chờ chỉ đạo giữa các story nếu còn story thuộc cùng epic có thể triển khai an toàn; chỉ dừng khi epic hiện tại hoàn thành, gặp blocker cần quyết định của người dùng, hoặc có rủi ro phá dữ liệu/thiết kế vượt ngoài story.
+- Sau khi hoàn thành một story và cập nhật trạng thái/story artifact, Codex phải compact cuộc trò chuyện bằng cơ chế compact của môi trường hiện hành (ví dụ `/compact` trong Codex CLI) trước khi bắt đầu story tiếp theo.
 
 ### BMad Workflow Rules
 

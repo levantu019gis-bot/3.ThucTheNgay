@@ -11,7 +11,13 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from thucthengay.models import Composition, ValidationSummary, WorkspaceManifest
+from thucthengay.models import (
+    Composition,
+    ImageLayer,
+    ValidationSummary,
+    ViewState,
+    WorkspaceManifest,
+)
 from thucthengay.workspace.atomic_write import atomic_write_json
 from thucthengay.workspace.paths import WorkspacePaths
 
@@ -196,14 +202,74 @@ class WorkspaceService:
     def mark_needs_revalidation(self, composition_id: str) -> Composition:
         """Mark a composition stale after layer/view/grid/metadata edits."""
         composition = self.read_composition(composition_id)
-        updated = _validated_composition_update(
-            composition,
-            {
-                "needs_revalidation": True,
-                "ready": False,
-                "include": False,
-                "review_order": None,
-            },
+        updated = _mark_composition_edit_stale(composition)
+        self.write_composition(updated)
+        return updated
+
+    def set_layer_visibility(
+        self,
+        composition_id: str,
+        layer_id: str,
+        *,
+        visible: bool,
+    ) -> Composition:
+        """Persist one layer visibility change and mark the composition stale."""
+        composition = self.read_composition(composition_id)
+        found = False
+        updated_layers: list[ImageLayer] = []
+        for layer in composition.layers:
+            if layer.layer_id == layer_id:
+                found = True
+                updated_layers.append(layer.model_copy(update={"visible": visible}))
+            else:
+                updated_layers.append(layer)
+
+        if not found:
+            msg = f"Layer not found in composition {composition_id}: {layer_id}"
+            raise WorkspaceError(msg)
+
+        updated = _mark_composition_edit_stale(
+            _validated_composition_update(composition, {"layers": updated_layers})
+        )
+        self.write_composition(updated)
+        return updated
+
+    def reorder_layers(
+        self,
+        composition_id: str,
+        ordered_layer_ids: list[str],
+    ) -> Composition:
+        """Persist a complete layer order using normalized zero-based order values."""
+        composition = self.read_composition(composition_id)
+        current_ids = {layer.layer_id for layer in composition.layers}
+        requested_ids = set(ordered_layer_ids)
+        if len(ordered_layer_ids) != len(requested_ids) or requested_ids != current_ids:
+            msg = f"Layer order must include each layer in {composition_id} exactly once."
+            raise WorkspaceError(msg)
+
+        layer_lookup = {layer.layer_id: layer for layer in composition.layers}
+        updated_layers = [
+            layer_lookup[layer_id].model_copy(update={"order": order})
+            for order, layer_id in enumerate(ordered_layer_ids)
+        ]
+        updated = _mark_composition_edit_stale(
+            _validated_composition_update(composition, {"layers": updated_layers})
+        )
+        self.write_composition(updated)
+        return updated
+
+    def update_view_state(
+        self,
+        composition_id: str,
+        *,
+        center: list[float],
+        scale: int,
+    ) -> Composition:
+        """Persist map view center/scale and mark the composition stale."""
+        composition = self.read_composition(composition_id)
+        view = ViewState(center=center, scale=scale, rotation=0)
+        updated = _mark_composition_edit_stale(
+            _validated_composition_update(composition, {"view": view})
         )
         self.write_composition(updated)
         return updated
@@ -337,3 +403,15 @@ def _validated_composition_update(
     data = composition.model_dump(mode="python")
     data.update(updates)
     return Composition.model_validate(data)
+
+
+def _mark_composition_edit_stale(composition: Composition) -> Composition:
+    return _validated_composition_update(
+        composition,
+        {
+            "needs_revalidation": True,
+            "ready": False,
+            "include": False,
+            "review_order": None,
+        },
+    )

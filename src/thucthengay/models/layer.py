@@ -14,6 +14,7 @@ class MetadataStatus(StrEnum):
     UNKNOWN = "unknown"
     VALID = "valid"
     NEEDS_CORRECTION = "needs_correction"
+    NEEDS_MANUAL_CORRECTION = "needs_manual_correction"
 
 
 class MetadataSource(StrEnum):
