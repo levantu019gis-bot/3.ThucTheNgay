@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GeoJSON Drawer</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <aside class="panel" aria-label="Công cụ vẽ GeoJSON">
+        <div class="brand">
+          <h1>GeoJSON Drawer</h1>
+          <p>Vẽ vùng trên nền ảnh vệ tinh Google và tải xuống GeoJSON.</p>
+        </div>
+
+        <section class="source-panel">
+          <span>Nền bản đồ</span>
+          <strong>Google Satellite</strong>
+        </section>
+
+        <section class="controls" aria-label="Điều khiển vẽ và chỉnh sửa">
+          <button id="editModeBtn" type="button">Bật chỉnh sửa</button>
+          <button id="bulkGroupModeBtn" type="button">Sửa group nhiều feature</button>
+          <button id="drawBtn" type="button">Vẽ feature</button>
+          <button id="finishBtn" type="button" disabled>Hoàn tất vùng</button>
+          <button id="undoPointBtn" type="button" disabled>Lùi điểm</button>
+          <button id="deleteLastBtn" type="button" disabled>Xóa feature cuối</button>
+          <button id="clearBtn" type="button" disabled>Xóa tất cả</button>
+          <button id="downloadBtn" type="button" disabled>Tải GeoJSON</button>
+        </section>
+
+        <section id="featureEditor" class="feature-editor" aria-label="Chỉnh sửa feature" hidden>
+          <div>
+            <span>Feature đang chọn</span>
+            <strong id="selectedFeatureType">Polygon</strong>
+          </div>
+          <label for="featureAliasInput">Alias</label>
+          <input id="featureAliasInput" type="text" placeholder="Nhập alias" />
+          <label for="featureGroupInput">Group</label>
+          <input id="featureGroupInput" type="text" placeholder="Nhập group" />
+          <div class="editor-actions">
+            <button id="saveFeaturePropsBtn" type="button">Lưu thông tin</button>
+            <button id="deleteFeatureBtn" type="button">Xóa feature</button>
+          </div>
+        </section>
+
+        <section id="bulkGroupEditor" class="feature-editor" aria-label="Chỉnh sửa group nhiều feature" hidden>
+          <div>
+            <span>Feature đã chọn</span>
+            <strong id="bulkSelectedCount">0</strong>
+          </div>
+          <label for="bulkGroupInput">Group</label>
+          <input id="bulkGroupInput" type="text" placeholder="Nhập group" />
+          <div class="editor-actions">
+            <button id="applyBulkGroupBtn" type="button">Cập nhật group</button>
+            <button id="clearBulkSelectionBtn" type="button">Bỏ chọn</button>
+          </div>
+        </section>
+
+        <section class="upload-panel" aria-label="Upload GeoJSON">
+          <label for="uploadInput">Upload GeoJSON</label>
+          <input id="uploadInput" type="file" accept=".geojson,.json,application/geo+json,application/json" />
+        </section>
+
+        <section class="stats" aria-live="polite">
+          <div>
+            <span>Feature</span>
+            <strong id="polygonCount">0</strong>
+          </div>
+          <div>
+            <span>Điểm đang vẽ</span>
+            <strong id="pointCount">0</strong>
+          </div>
+        </section>
+
+        <p id="status" class="status">Upload GeoJSON hoặc bấm 'Vẽ feature' để thêm polygon mới.</p>
+      </aside>
+
+      <section class="map-wrap">
+        <div id="map" class="map" role="application" aria-label="Satellite map"></div>
+      </section>
+    </main>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
