@@ -1,6 +1,6 @@
 # Story 1.1: Initialize Application Scaffold and Quality Tooling
 
-Status: review
+Status: done
 
 <!-- Ultimate context engine analysis completed - comprehensive developer guide created -->
 
@@ -59,9 +59,11 @@ so that future stories can be implemented consistently and tested without ad hoc
 ### Review Findings
 
 
-- [ ] [Review][Patch] Keep conda GDAL fallback from replacing conda-forge native GIS packages with PyPI wheels [README.md:30]
-- [ ] [Review][Patch] Fix relative import resolution for core package `__init__.py` files [tests/unit/test_core_import_boundaries.py:32]
-- [ ] [Review][Patch] Detect constant-string dynamic imports in core import-boundary guardrail [tests/unit/test_core_import_boundaries.py:47]
+- [x] [Review][Patch] Keep conda GDAL fallback from replacing conda-forge native GIS packages with PyPI wheels [README.md:30]
+- [x] [Review][Patch] Fix relative import resolution for core package `__init__.py` files [tests/unit/test_core_import_boundaries.py:32]
+- [x] [Review][Patch] Detect constant-string dynamic imports in core import-boundary guardrail [tests/unit/test_core_import_boundaries.py:47]
+- [x] [Review][Patch] Include non-GIS runtime dependencies in conda fallback environment [environment.yml:4]
+- [x] [Review][Patch] Detect aliased and relative constant-string dynamic imports in core import-boundary guardrail [tests/unit/test_core_import_boundaries.py:42]
 - [x] [Review][Patch] Document conda+uv GDAL fallback without bypassing conda environment [README.md:21]
 - [x] [Review][Patch] Align project metadata with Python 3.11 baseline [pyproject.toml:6]
 - [x] [Review][Patch] Normalize relative imports in core import-boundary guardrail [tests/unit/test_core_import_boundaries.py:27]
@@ -191,9 +193,30 @@ GPT-5 Codex
 - 2026-05-24: `conda run -n ttn-env uv run pytest` passed: 2 tests collected, 2 passed.
 - 2026-05-24: `conda run -n ttn-env uv run ruff check .` passed: all checks passed.
 - 2026-05-24: `conda run -n ttn-env uv run python -m thucthengay` passed and printed the minimal scaffold message.
+- 2026-05-25: Local shell did not have `uv`, `pytest`, or `ruff` on PATH; found conda at `/home/ongtu/miniconda3/bin/conda`.
+- 2026-05-25: Installed `uv`, `pytest`, and `ruff` into `ttn-env` from conda-forge to run the documented fallback workflow.
+- 2026-05-25: `python3 -m compileall src tests` passed.
+- 2026-05-25: `PYTHONPATH=src python3 -m thucthengay` passed and printed the minimal scaffold message.
+- 2026-05-25: Direct execution of the import-boundary test functions passed.
+- 2026-05-25: `/home/ongtu/miniconda3/bin/conda run -n ttn-env env UV_PROJECT_ENVIRONMENT=/home/ongtu/miniconda3/envs/ttn-env uv pip install --no-deps -e .` passed.
+- 2026-05-25: `/home/ongtu/miniconda3/bin/conda run -n ttn-env env UV_PROJECT_ENVIRONMENT=/home/ongtu/miniconda3/envs/ttn-env uv run --no-sync pytest` passed: 5 tests collected, 5 passed.
+- 2026-05-25: `/home/ongtu/miniconda3/bin/conda run -n ttn-env env UV_PROJECT_ENVIRONMENT=/home/ongtu/miniconda3/envs/ttn-env uv run --no-sync ruff check .` passed: all checks passed.
+- 2026-05-25: `/home/ongtu/miniconda3/bin/conda run -n ttn-env env UV_PROJECT_ENVIRONMENT=/home/ongtu/miniconda3/envs/ttn-env uv run --no-sync python -m thucthengay` passed and printed the minimal scaffold message.
+- 2026-05-25: Code review rerun found remaining guardrail edge cases and missing fallback runtime dependencies; patched both.
+- 2026-05-25: Installed `pyside6` and `pydantic` into `ttn-env` from conda-forge so the local environment matches the fallback dependency path.
+- 2026-05-25: `/home/ongtu/miniconda3/bin/conda run -n ttn-env python -c "import PySide6, pydantic, numpy"` passed.
+- 2026-05-25: Final `/home/ongtu/miniconda3/bin/conda run -n ttn-env env UV_PROJECT_ENVIRONMENT=/home/ongtu/miniconda3/envs/ttn-env uv run --no-sync pytest` passed: 5 tests collected, 5 passed.
+- 2026-05-25: Final `/home/ongtu/miniconda3/bin/conda run -n ttn-env env UV_PROJECT_ENVIRONMENT=/home/ongtu/miniconda3/envs/ttn-env uv run --no-sync ruff check .` passed: all checks passed.
+- 2026-05-25: Final `/home/ongtu/miniconda3/bin/conda run -n ttn-env env UV_PROJECT_ENVIRONMENT=/home/ongtu/miniconda3/envs/ttn-env uv run --no-sync python -m thucthengay` passed and printed the minimal scaffold message.
 
 ### Completion Notes List
 
+- Resolved review finding: added `pyside6`, `pydantic`, and explicit `numpy` to `environment.yml` so the conda fallback includes all runtime dependencies declared by the scaffold.
+- Resolved review finding: fixed package `__init__.py` context calculation and added a regression test that exercises `package_context_for_source()` directly.
+- Resolved review finding: extended dynamic import detection for importlib aliases, `from importlib import import_module`, function aliases, relative import strings, and `__package__`-based package context.
+- Resolved review finding: revised the conda GDAL fallback to avoid `uv sync`, install only this app with `uv pip install --no-deps -e .`, and run commands with `uv run --no-sync` so conda-forge keeps ownership of native GIS packages.
+- Resolved review finding: changed relative import analysis to use package context for both module files and package `__init__.py` files.
+- Resolved review finding: added constant-string dynamic import detection for `importlib.import_module(...)` and `__import__(...)` to the core import-boundary guardrail.
 - Resolved review finding: documented the conda+uv fallback with `UV_PROJECT_ENVIRONMENT` so uv uses `ttn-env` instead of creating a separate `.venv`.
 - Resolved review finding: constrained package metadata to Python `>=3.11,<3.12` and regenerated `uv.lock`.
 - Resolved review finding: normalized relative imports in the core import-boundary guardrail and added a direct regression test for `from ..editor import widgets`.
@@ -207,6 +230,7 @@ GPT-5 Codex
 - `.gitignore`
 - `.python-version`
 - `README.md`
+- `environment.yml`
 - `pyproject.toml`
 - `uv.lock`
 - `src/thucthengay/__init__.py`
@@ -240,5 +264,7 @@ GPT-5 Codex
 
 ### Change Log
 
+- 2026-05-25: Completed code review rerun patches for conda fallback runtime dependencies and import-boundary dynamic import edge cases.
+- 2026-05-25: Addressed remaining code review findings for conda GIS fallback, package `__init__.py` relative import resolution, and constant-string dynamic import detection.
 - 2026-05-24: Addressed code review findings - 3 patch items resolved.
 - 2026-05-24: Implemented Story 1.1 scaffold, tests, quality tooling, and validation commands.

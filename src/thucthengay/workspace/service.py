@@ -1,0 +1,339 @@
+"""Workspace service facade for manifest and composition state."""
+
+from __future__ import annotations
+
+import json
+import shutil
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from json import JSONDecodeError
+from pathlib import Path
+
+from pydantic import ValidationError
+
+from thucthengay.models import Composition, ValidationSummary, WorkspaceManifest
+from thucthengay.workspace.atomic_write import atomic_write_json
+from thucthengay.workspace.paths import WorkspacePaths
+
+
+class WorkspaceError(RuntimeError):
+    """Base error for expected workspace failures."""
+
+
+class WorkspaceClearNotConfirmedError(WorkspaceError):
+    """Raised when destructive clearing is requested without explicit confirmation."""
+
+
+@dataclass(frozen=True)
+class WorkspaceClearPlan:
+    """App-owned workspace paths that would be cleared."""
+
+    cache: Path
+    compositions: Path
+    renders: Path
+    exports: Path
+
+    @property
+    def labels(self) -> tuple[str, ...]:
+        return ("cache/", "compositions/", "renders/", "exports/")
+
+    @property
+    def paths(self) -> tuple[Path, ...]:
+        return (self.cache, self.compositions, self.renders, self.exports)
+
+
+class WorkspaceService:
+    """Owns all workspace manifest and composition file access."""
+
+    def __init__(self, workspace_root: str | Path) -> None:
+        self.paths = WorkspacePaths(Path(workspace_root).expanduser().resolve())
+
+    def initialize(
+        self,
+        *,
+        config_path: str | Path,
+        imagery_input_path: str | Path | None = None,
+    ) -> WorkspaceManifest:
+        """Create or verify the workspace layout and manifest."""
+        self._ensure_layout()
+        if self.paths.manifest.exists():
+            manifest = self.load_manifest()
+            changed = False
+            if str(config_path) != manifest.config_path:
+                manifest.config_path = str(config_path)
+                changed = True
+            if (
+                imagery_input_path is not None
+                and str(imagery_input_path) != manifest.imagery_input_path
+            ):
+                manifest.imagery_input_path = str(imagery_input_path)
+                changed = True
+            if changed:
+                self.write_manifest(manifest)
+            return manifest
+
+        now = _utc_now()
+        manifest = WorkspaceManifest(
+            config_path=str(config_path),
+            imagery_input_path=str(imagery_input_path) if imagery_input_path is not None else None,
+            composition_ids=[],
+            created_at=now,
+            updated_at=now,
+        )
+        self.write_manifest(manifest)
+        return manifest
+
+    def load_manifest(self) -> WorkspaceManifest:
+        """Load the manifest and recreate recoverable missing folders."""
+        self._ensure_layout()
+        try:
+            raw = json.loads(self.paths.manifest.read_text(encoding="utf-8"))
+        except FileNotFoundError as error:
+            msg = f"Workspace manifest not found: {self.paths.manifest}"
+            raise WorkspaceError(msg) from error
+        except JSONDecodeError as error:
+            msg = f"Workspace manifest is not valid JSON: {self.paths.manifest}"
+            raise WorkspaceError(msg) from error
+
+        try:
+            return WorkspaceManifest.model_validate(raw)
+        except ValidationError as error:
+            msg = f"Workspace manifest schema is invalid: {self.paths.manifest}"
+            raise WorkspaceError(msg) from error
+
+    def write_manifest(self, manifest: WorkspaceManifest) -> None:
+        """Atomically persist the workspace manifest."""
+        manifest.updated_at = _utc_now()
+        if manifest.created_at is None:
+            manifest.created_at = manifest.updated_at
+        atomic_write_json(self.paths.manifest, manifest.model_dump(mode="json"))
+
+    def write_composition(self, composition: Composition) -> Path:
+        """Atomically persist one composition and register it in the manifest."""
+        self._ensure_layout()
+        composition_path = self.paths.composition_file(composition.composition_id)
+        atomic_write_json(composition_path, composition.model_dump(mode="json"))
+
+        manifest = self.load_manifest()
+        if composition.composition_id not in manifest.composition_ids:
+            manifest.composition_ids.append(composition.composition_id)
+            manifest.composition_ids.sort()
+            self.write_manifest(manifest)
+
+        return composition_path
+
+    def read_composition(self, composition_id: str) -> Composition:
+        """Load one composition by id."""
+        composition_path = self.paths.composition_file(composition_id)
+        try:
+            raw = json.loads(composition_path.read_text(encoding="utf-8"))
+        except FileNotFoundError as error:
+            msg = f"Composition not found: {composition_id}"
+            raise WorkspaceError(msg) from error
+        except JSONDecodeError as error:
+            msg = f"Composition JSON is invalid: {composition_path}"
+            raise WorkspaceError(msg) from error
+
+        try:
+            return Composition.model_validate(raw)
+        except ValidationError as error:
+            msg = f"Composition schema is invalid: {composition_path}"
+            raise WorkspaceError(msg) from error
+
+    def list_compositions(self) -> list[Composition]:
+        """Load compositions in manifest queue order."""
+        manifest = self.load_manifest()
+        return [
+            self.read_composition(composition_id)
+            for composition_id in manifest.composition_ids
+        ]
+
+    def update_review_state(
+        self,
+        composition_id: str,
+        *,
+        reviewed: bool | None = None,
+        ready: bool | None = None,
+        include: bool | None = None,
+        review_order: int | None = None,
+        notes: str | None = None,
+    ) -> Composition:
+        """Persist review/status fields for one composition."""
+        composition = self.read_composition(composition_id)
+        updates: dict[str, object | None] = {}
+        if reviewed is not None:
+            updates["reviewed"] = reviewed
+        if ready is not None:
+            updates["ready"] = ready
+        if include is not None:
+            updates["include"] = include
+        if review_order is not None:
+            updates["review_order"] = review_order
+        if notes is not None:
+            updates["notes"] = notes
+
+        updated = _validated_composition_update(composition, updates)
+        self.write_composition(updated)
+        return updated
+
+    def save_validation_summary(
+        self,
+        composition_id: str,
+        summary: ValidationSummary,
+    ) -> Composition:
+        """Persist compact validation summary and mark it current."""
+        composition = self.read_composition(composition_id)
+        updated = _validated_composition_update(
+            composition,
+            {
+                "validation_summary": summary,
+                "needs_revalidation": False,
+            },
+        )
+        self.write_composition(updated)
+        return updated
+
+    def mark_needs_revalidation(self, composition_id: str) -> Composition:
+        """Mark a composition stale after layer/view/grid/metadata edits."""
+        composition = self.read_composition(composition_id)
+        updated = _validated_composition_update(
+            composition,
+            {
+                "needs_revalidation": True,
+                "ready": False,
+                "include": False,
+                "review_order": None,
+            },
+        )
+        self.write_composition(updated)
+        return updated
+
+    def apply_include_transition(
+        self,
+        composition_id: str,
+        *,
+        validation_passed: bool,
+    ) -> Composition:
+        """Persist the right-arrow include transition after a caller-supplied pass gate."""
+        if not validation_passed:
+            msg = "Include transition requires a passing validation gate from the caller."
+            raise WorkspaceError(msg)
+
+        composition = self.read_composition(composition_id)
+        review_order = composition.review_order or self._next_review_order()
+        updated = _validated_composition_update(
+            composition,
+            {
+                "reviewed": True,
+                "ready": True,
+                "include": True,
+                "review_order": review_order,
+            },
+        )
+        self.write_composition(updated)
+        return updated
+
+    def apply_skip_transition(self, composition_id: str) -> Composition:
+        """Persist the up-arrow skip transition."""
+        composition = self.read_composition(composition_id)
+        updated = _validated_composition_update(
+            composition,
+            {
+                "reviewed": True,
+                "ready": False,
+                "include": False,
+                "review_order": None,
+            },
+        )
+        self.write_composition(updated)
+        return updated
+
+    def next_composition_id(self, composition_id: str) -> str | None:
+        """Return the next composition id in review queue order."""
+        return self._neighbor_composition_id(composition_id, offset=1)
+
+    def previous_composition_id(self, composition_id: str) -> str | None:
+        """Return the previous composition id without mutating composition state."""
+        return self._neighbor_composition_id(composition_id, offset=-1)
+
+    def included_export_candidates(self) -> list[Composition]:
+        """Return included compositions whose persisted state is not stale or errored.
+
+        Epic 4 export preflight must still recompute detailed validation. This helper only
+        prevents obviously stale persisted summaries from being treated as export-ready.
+        """
+        return [
+            composition
+            for composition in self.list_compositions()
+            if composition.include
+            and composition.ready
+            and not composition.needs_revalidation
+            and composition.validation_summary.error_count == 0
+        ]
+
+    def clear_plan(self) -> WorkspaceClearPlan:
+        """Return the app-owned folders that destructive clearing would remove."""
+        return WorkspaceClearPlan(
+            cache=self.paths.cache,
+            compositions=self.paths.compositions,
+            renders=self.paths.renders,
+            exports=self.paths.exports,
+        )
+
+    def has_app_owned_data(self) -> bool:
+        """Return true when app-owned workspace folders contain any data."""
+        return any(path.exists() and any(path.iterdir()) for path in self.paths.app_owned_dirs)
+
+    def clear_app_owned_data(self, *, confirmed: bool = False) -> None:
+        """Clear app-owned generated folders only after explicit confirmation."""
+        if not confirmed:
+            labels = ", ".join(self.clear_plan().labels)
+            msg = f"Refusing to clear workspace data without confirmation: {labels}"
+            raise WorkspaceClearNotConfirmedError(msg)
+
+        for path in self.clear_plan().paths:
+            if path.exists():
+                shutil.rmtree(path)
+            path.mkdir(parents=True, exist_ok=True)
+
+        manifest = self.load_manifest()
+        manifest.composition_ids = []
+        self.write_manifest(manifest)
+
+    def _ensure_layout(self) -> None:
+        self.paths.root.mkdir(parents=True, exist_ok=True)
+        for directory in self.paths.app_owned_dirs:
+            directory.mkdir(parents=True, exist_ok=True)
+
+    def _next_review_order(self) -> int:
+        existing_orders = [
+            composition.review_order
+            for composition in self.list_compositions()
+            if composition.include and composition.review_order is not None
+        ]
+        return max(existing_orders, default=0) + 1
+
+    def _neighbor_composition_id(self, composition_id: str, *, offset: int) -> str | None:
+        composition_ids = self.load_manifest().composition_ids
+        try:
+            index = composition_ids.index(composition_id)
+        except ValueError:
+            return None
+
+        neighbor_index = index + offset
+        if neighbor_index < 0 or neighbor_index >= len(composition_ids):
+            return None
+        return composition_ids[neighbor_index]
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+def _validated_composition_update(
+    composition: Composition,
+    updates: dict[str, object | None],
+) -> Composition:
+    data = composition.model_dump(mode="python")
+    data.update(updates)
+    return Composition.model_validate(data)

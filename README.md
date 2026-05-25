@@ -26,12 +26,15 @@ and shapely are resolved together by conda-forge:
 ```bash
 conda env create -f environment.yml
 conda activate ttn-env
-python -m pip install uv
-UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX" uv sync --dev
-UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX" uv run pytest
-UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX" uv run ruff check .
-UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX" uv run python -m thucthengay
+conda install -c conda-forge uv pytest ruff
+UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX" uv pip install --no-deps -e .
+UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX" uv run --no-sync pytest
+UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX" uv run --no-sync ruff check .
+UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX" uv run --no-sync python -m thucthengay
 ```
 
-`UV_PROJECT_ENVIRONMENT` is required for this fallback path so `uv` installs into and runs from
-the active conda environment instead of creating a separate project `.venv`.
+This fallback intentionally avoids `uv sync` so `uv` does not replace conda-forge's native GIS
+packages with PyPI wheels. `uv pip install --no-deps -e .` installs only this application package;
+`UV_PROJECT_ENVIRONMENT` keeps `uv run` inside the active conda environment instead of creating a
+separate project `.venv`; conda remains responsible for GDAL, rasterio, pyproj, shapely, Pillow,
+and python-pptx.

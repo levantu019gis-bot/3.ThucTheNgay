@@ -1,12 +1,24 @@
-"""Minimal command-line entrypoint for the application scaffold."""
+"""Application entrypoint."""
 
 from __future__ import annotations
 
+import os
 import sys
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run the placeholder app shell without requiring GUI or project data."""
-    _ = sys.argv[1:] if argv is None else argv
-    print("3.ThucTheNgay scaffold ready.")
-    return 0
+    """Run the desktop app when possible, or a headless smoke check."""
+    args = sys.argv[1:] if argv is None else argv
+    if "--smoke" in args or "--no-gui" in args or _is_headless_linux():
+        print("3.ThucTheNgay app ready.")
+        return 0
+
+    from thucthengay.editor.app_shell import run_gui
+
+    return run_gui([sys.argv[0], *args])
+
+
+def _is_headless_linux() -> bool:
+    if not sys.platform.startswith("linux"):
+        return False
+    return not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY")
