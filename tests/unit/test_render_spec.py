@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 import os
 import subprocess
 import sys
@@ -10,6 +9,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+from pyproj import Geod
 
 from thucthengay.models import (
     Composition,
@@ -30,7 +30,7 @@ from thucthengay.render import (
 )
 from thucthengay.render.spec import (
     INCH_TO_METER,
-    METERS_PER_DEGREE_LAT,
+    MAX_RENDER_PIXELS,
     POINT_TO_INCH,
 )
 
@@ -131,21 +131,21 @@ class TestBuildRenderSpecHappyPath:
             output_height=720,
         )
 
-        # Reproduce the documented MVP formula
+        # Reproduce the documented geodesic span calculation
         paper_w_m = 640 * POINT_TO_INCH * INCH_TO_METER
         paper_h_m = 360 * POINT_TO_INCH * INCH_TO_METER
         ground_w_m = paper_w_m * 50000
         ground_h_m = paper_h_m * 50000
-        cos_lat = math.cos(math.radians(10.8))
-        deg_per_m_lon = 1.0 / (METERS_PER_DEGREE_LAT * cos_lat)
-        deg_per_m_lat = 1.0 / METERS_PER_DEGREE_LAT
-        half_w = ground_w_m / 2.0 * deg_per_m_lon
-        half_h = ground_h_m / 2.0 * deg_per_m_lat
+        geod = Geod(ellps="WGS84")
+        west_lon, _, _ = geod.fwd(106.7, 10.8, 270.0, ground_w_m / 2.0)
+        east_lon, _, _ = geod.fwd(106.7, 10.8, 90.0, ground_w_m / 2.0)
+        _, south_lat, _ = geod.fwd(106.7, 10.8, 180.0, ground_h_m / 2.0)
+        _, north_lat, _ = geod.fwd(106.7, 10.8, 0.0, ground_h_m / 2.0)
 
-        assert spec.geo_window.min_lon == pytest.approx(106.7 - half_w)
-        assert spec.geo_window.max_lon == pytest.approx(106.7 + half_w)
-        assert spec.geo_window.min_lat == pytest.approx(10.8 - half_h)
-        assert spec.geo_window.max_lat == pytest.approx(10.8 + half_h)
+        assert spec.geo_window.min_lon == pytest.approx(min(west_lon, east_lon))
+        assert spec.geo_window.max_lon == pytest.approx(max(west_lon, east_lon))
+        assert spec.geo_window.min_lat == pytest.approx(south_lat)
+        assert spec.geo_window.max_lat == pytest.approx(north_lat)
         assert isinstance(spec.geo_window, GeoWindow)
 
 
@@ -288,6 +288,44 @@ class TestInvalidInputs:
         ids = {issue.issue_id for issue in exc.value.issues}
         assert "render.spec.target_mismatch" in ids
         assert "render.spec.output_size_invalid" in ids
+
+    def test_output_size_too_large_raises_structured_issue(self) -> None:
+        with pytest.raises(RenderSpecError) as exc:
+            build_render_spec(
+                composition=_composition(),
+                target=_target(),
+                template=_template(),
+                template_metadata_file="t.json",
+                output_width=MAX_RENDER_PIXELS + 1,
+                output_height=1,
+            )
+        assert exc.value.issues[0].issue_id == "render.spec.output_size_too_large"
+
+    def test_geo_window_crossing_antimeridian_raises_structured_issue(self) -> None:
+        comp = Composition(
+            composition_id="tgt__20260525",
+            target_id="tgt",
+            capture_date=date(2026, 5, 25),
+            view=ViewState(center=[179.99, 0.0], scale=50000),
+            layers=[_layer("L1", order=0)],
+        )
+        wide_template = TemplateMetadata(
+            template_pptx="tgt.pptx",
+            slide_index=0,
+            map_frame=MapFrame(x=0, y=0, width=2000, height=360),
+        )
+
+        with pytest.raises(RenderSpecError) as exc:
+            build_render_spec(
+                composition=comp,
+                target=_target(),
+                template=wide_template,
+                template_metadata_file="t.json",
+                output_width=1280,
+                output_height=720,
+            )
+
+        assert exc.value.issues[0].issue_id == "render.spec.geo_window_invalid"
 
 
 class TestImportBoundary:

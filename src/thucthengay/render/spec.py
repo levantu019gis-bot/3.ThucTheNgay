@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import math
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pyproj import Geod
 
 from thucthengay.models.composition import Composition
 from thucthengay.models.config import GridConfig, TargetConfig
@@ -19,6 +20,8 @@ from thucthengay.models.template import MapFrame, TemplateMetadata
 POINT_TO_INCH: float = 1.0 / 72.0
 INCH_TO_METER: float = 0.0254
 METERS_PER_DEGREE_LAT: float = 111_320.0
+MAX_RENDER_PIXELS: int = 50_000_000
+_GEOD = Geod(ellps="WGS84")
 
 
 class RenderSpecError(Exception):
@@ -41,6 +44,16 @@ class GeoWindow(BaseModel):
 
     @model_validator(mode="after")
     def bounds_must_be_ordered(self) -> GeoWindow:
+        values = (self.min_lon, self.min_lat, self.max_lon, self.max_lat)
+        if not all(math.isfinite(value) for value in values):
+            msg = "GeoWindow bounds must be finite"
+            raise ValueError(msg)
+        if not -180 <= self.min_lon <= 180 or not -180 <= self.max_lon <= 180:
+            msg = "GeoWindow longitude bounds must be between -180 and 180"
+            raise ValueError(msg)
+        if not -90 <= self.min_lat <= 90 or not -90 <= self.max_lat <= 90:
+            msg = "GeoWindow latitude bounds must be between -90 and 90"
+            raise ValueError(msg)
         if self.min_lon >= self.max_lon:
             msg = "min_lon must be < max_lon"
             raise ValueError(msg)
@@ -67,6 +80,20 @@ class RenderBackground(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     color: str = "#FFFFFF"
+
+    @field_validator("color")
+    @classmethod
+    def color_must_be_hex_rgb(cls, value: str) -> str:
+        text = value.lstrip("#")
+        if len(text) != 6:
+            msg = "background color must use #RRGGBB"
+            raise ValueError(msg)
+        try:
+            int(text, 16)
+        except ValueError as exc:
+            msg = "background color must use #RRGGBB"
+            raise ValueError(msg) from exc
+        return f"#{text.upper()}"
 
 
 class RenderSpec(BaseModel):
@@ -126,31 +153,44 @@ def _issue(
     )
 
 
-def _compute_geo_window(
-    *, center_lon: float, center_lat: float, scale_denom: int, map_frame: MapFrame
-) -> GeoWindow:
-    """MVP geo window from scale + map frame physical size.
-
-    Treats ``map_frame.width``/``height`` as PowerPoint points. Story 5.2 will
-    refine with proper CRS transforms; this approximation keeps preview/final
-    parity at this stage.
-    """
+def _ground_span_meters(*, scale_denom: int, map_frame: MapFrame) -> tuple[float, float]:
     paper_width_m = map_frame.width * POINT_TO_INCH * INCH_TO_METER
     paper_height_m = map_frame.height * POINT_TO_INCH * INCH_TO_METER
     ground_width_m = paper_width_m * scale_denom
     ground_height_m = paper_height_m * scale_denom
+    return ground_width_m, ground_height_m
 
-    cos_lat = math.cos(math.radians(center_lat))
-    meters_per_degree_lon = METERS_PER_DEGREE_LAT * max(cos_lat, 1e-6)
 
-    half_w_deg = (ground_width_m / 2.0) / meters_per_degree_lon
-    half_h_deg = (ground_height_m / 2.0) / METERS_PER_DEGREE_LAT
+def _compute_geo_window(
+    *, center_lon: float, center_lat: float, scale_denom: int, map_frame: MapFrame
+) -> GeoWindow:
+    """Derive a WGS84 window from scale + map frame physical size.
+
+    Treats ``map_frame.width``/``height`` as PowerPoint points. The span is
+    computed geodesically from the persisted center so preview and final render
+    share one stable, CRS-aware source of truth.
+    """
+    ground_width_m, ground_height_m = _ground_span_meters(
+        scale_denom=scale_denom, map_frame=map_frame
+    )
+
+    half_w_m = ground_width_m / 2.0
+    half_h_m = ground_height_m / 2.0
+    west_lon, _, _ = _GEOD.fwd(center_lon, center_lat, 270.0, half_w_m)
+    east_lon, _, _ = _GEOD.fwd(center_lon, center_lat, 90.0, half_w_m)
+    _, south_lat, _ = _GEOD.fwd(center_lon, center_lat, 180.0, half_h_m)
+    _, north_lat, _ = _GEOD.fwd(center_lon, center_lat, 0.0, half_h_m)
+
+    lon_values = [west_lon, east_lon]
+    if max(lon_values) - min(lon_values) > 180:
+        msg = "render window crosses the antimeridian, which is not supported yet"
+        raise ValueError(msg)
 
     return GeoWindow(
-        min_lon=center_lon - half_w_deg,
-        max_lon=center_lon + half_w_deg,
-        min_lat=center_lat - half_h_deg,
-        max_lat=center_lat + half_h_deg,
+        min_lon=min(lon_values),
+        max_lon=max(lon_values),
+        min_lat=south_lat,
+        max_lat=north_lat,
     )
 
 
@@ -190,6 +230,19 @@ def build_render_spec(
                 composition_id=composition.composition_id,
             )
         )
+    elif output_width * output_height > MAX_RENDER_PIXELS:
+        issues.append(
+            _issue(
+                "render.spec.output_size_too_large",
+                "Kích thước output quá lớn cho một lần render.",
+                (
+                    f"Giảm output_width/output_height để tổng số pixel không vượt "
+                    f"{MAX_RENDER_PIXELS:,}, hoặc dùng luồng render chia tile ở bản final."
+                ),
+                target_id=target.id,
+                composition_id=composition.composition_id,
+            )
+        )
 
     if template.map_frame.width <= 0 or template.map_frame.height <= 0:
         issues.append(
@@ -223,12 +276,27 @@ def build_render_spec(
     grid = composition.grid_override if composition.grid_override is not None else target.grid
 
     center_lon, center_lat = composition.view.center
-    geo_window = _compute_geo_window(
-        center_lon=center_lon,
-        center_lat=center_lat,
-        scale_denom=composition.view.scale,
-        map_frame=template.map_frame,
-    )
+    try:
+        geo_window = _compute_geo_window(
+            center_lon=center_lon,
+            center_lat=center_lat,
+            scale_denom=composition.view.scale,
+            map_frame=template.map_frame,
+        )
+    except (ValueError, ValidationError) as exc:
+        issues.append(
+            _issue(
+                "render.spec.geo_window_invalid",
+                "Không tính được vùng bản đồ hợp lệ từ center/scale/template.",
+                (
+                    "Kiểm tra tọa độ tâm, scale và map frame; vùng render không được vượt "
+                    f"miền WGS84 hợp lệ hoặc cắt qua kinh tuyến 180. Chi tiết: {exc}"
+                ),
+                target_id=target.id,
+                composition_id=composition.composition_id,
+            )
+        )
+        raise RenderSpecError(issues) from exc
 
     map_frame_aspect = template.map_frame.width / template.map_frame.height
 

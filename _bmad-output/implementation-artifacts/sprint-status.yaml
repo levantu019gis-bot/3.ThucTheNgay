@@ -1,5 +1,5 @@
 # generated: 2026-05-24
-# last_updated: 2026-05-25  # 4-6 code review complete
+# last_updated: 2026-05-26  # 5-1 and 5-2 code review complete
 # project: 3.ThucTheNgay
 # project_key: NOKEY
 # tracking_system: file-system
@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-05-24
-last_updated: 2026-05-25
+last_updated: 2026-05-26
 project: 3.ThucTheNgay
 project_key: NOKEY
 tracking_system: file-system
@@ -77,8 +77,8 @@ development_status:
   4-6-confirm-cache-move-when-corrected-date-changes: done
   epic-4-retrospective: optional
   epic-5: in-progress
-  5-1-build-shared-render-specification-from-composition-state: review
-  5-2-implement-raster-window-and-crs-transform-rendering-core: review
+  5-1-build-shared-render-specification-from-composition-state: done
+  5-2-implement-raster-window-and-crs-transform-rendering-core: done
   5-3-render-grid-and-map-background-without-mvp-extras: backlog
   5-4-implement-two-stage-preview-rendering-jobs: backlog
   5-5-implement-final-png-rendering-and-render-log: backlog

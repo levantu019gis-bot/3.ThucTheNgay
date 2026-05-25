@@ -63,7 +63,17 @@ def _reproject_bbox(
         [np.full_like(xs_lin, min_y), ys_lin, np.full_like(xs_lin, max_y), ys_lin[::-1]]
     )
     out_x, out_y = transformer.transform(edge_x, edge_y)
+    if not np.isfinite(out_x).all() or not np.isfinite(out_y).all():
+        msg = "Projected bbox is outside the valid CRS domain."
+        raise ValueError(msg)
     return float(out_x.min()), float(out_y.min()), float(out_x.max()), float(out_y.max())
+
+
+def _ensure_north_up(dataset: rasterio.io.DatasetReader) -> None:
+    transform = dataset.transform
+    if not np.isclose(transform.b, 0.0) or not np.isclose(transform.d, 0.0):
+        msg = "Rotated or sheared raster transforms are not supported by windowed rendering."
+        raise ValueError(msg)
 
 
 def geographic_window_to_raster_window(
@@ -75,6 +85,7 @@ def geographic_window_to_raster_window(
     Returns ``None`` if the geographic window does not overlap the raster.
     ``covered_bbox`` is clipped to the raster's bounds in WGS84 lon/lat.
     """
+    _ensure_north_up(dataset)
     raster_crs = normalize_crs_key(dataset.crs)
 
     if raster_crs == GEOGRAPHIC_CRS:

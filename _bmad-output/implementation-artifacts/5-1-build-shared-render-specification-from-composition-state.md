@@ -1,6 +1,6 @@
 # Story 5.1: Build Shared Render Specification from Composition State
 
-Status: review
+Status: done
 
 <!-- Created from Epic 5 backlog context per project autonomous execution mandate. -->
 
@@ -44,6 +44,13 @@ So that preview and final rendering use the same source of truth.
   - [x] Import boundary: `thucthengay.render` does NOT import PySide6.
 - [x] Run pytest + ruff + smoke.
 
+### Review Findings
+
+- [x] [Review][Patch] Replace the scale/window approximation with a pyproj-backed geodesic span so the shared spec no longer bakes in latitude/cosine drift before Story 5.2 reads rasters.
+- [x] [Review][Patch] Add finite WGS84 bounds validation and reject antimeridian/pole-crossing windows with structured Vietnamese `RenderSpecError` issues instead of letting invalid CRS math reach rasterio.
+- [x] [Review][Patch] Add an output pixel budget guard so bad template/export dimensions cannot allocate huge render buffers and freeze or crash the app.
+- [x] [Review][Patch] Validate background colors as `#RRGGBB` at model construction so render callers receive predictable inputs.
+
 ## Dev Notes
 
 - Follow `_bmad-output/project-context.md` for env/quality rules.
@@ -72,6 +79,11 @@ claude-opus-4-7
 - `conda run -n ttn-env pytest` — 179 passed (13 new tests in `test_render_spec.py`).
 - `conda run -n ttn-env ruff check .` — All checks passed.
 - `$env:PYTHONPATH='src'; conda run -n ttn-env python -m thucthengay --smoke` — App ready.
+- `conda run -n ttn-env env UV_PROJECT_ENVIRONMENT=/home/ongtu/miniconda3/envs/ttn-env uv run --no-sync pytest tests/unit/test_render_spec.py tests/unit/test_render_raster.py tests/unit/test_gis_crs.py` — 35 passed after review patches.
+- `conda run -n ttn-env env UV_PROJECT_ENVIRONMENT=/home/ongtu/miniconda3/envs/ttn-env uv run --no-sync ruff check src/thucthengay/render src/thucthengay/gis tests/unit/test_render_spec.py tests/unit/test_render_raster.py tests/unit/test_gis_crs.py` — All checks passed after review patches.
+- `conda run -n ttn-env env UV_PROJECT_ENVIRONMENT=/home/ongtu/miniconda3/envs/ttn-env uv run --no-sync pytest` — 215 passed.
+- `conda run -n ttn-env env UV_PROJECT_ENVIRONMENT=/home/ongtu/miniconda3/envs/ttn-env uv run --no-sync ruff check .` — All checks passed.
+- `conda run -n ttn-env env UV_PROJECT_ENVIRONMENT=/home/ongtu/miniconda3/envs/ttn-env uv run --no-sync python -m thucthengay --smoke` — App ready.
 
 ### Completion Notes List
 
@@ -81,6 +93,9 @@ claude-opus-4-7
 - Hidden layers excluded; visible layers sorted by persisted `order` (preserves UX-DR layer ordering).
 - `grid_override` precedence over `target.grid`; target object is not mutated (verified by test).
 - Import-boundary test runs in a clean subprocess to confirm `thucthengay.render` does not transitively pull in PySide6.
+- Review hardening replaced the initial meters-per-degree approximation with a pyproj geodesic calculation from the persisted center/scale/map frame, while keeping the same shared spec contract for preview/final parity.
+- Render spec now rejects unsafe output sizes and invalid/extreme WGS84 windows before raster allocation or CRS transforms can trigger OOM, hangs, or low-level exceptions.
+- Background color validation is model-level, keeping render code from receiving malformed color strings in normal use.
 
 ### File List
 
@@ -89,8 +104,11 @@ claude-opus-4-7
 - `src/thucthengay/render/spec.py` (NEW)
 - `src/thucthengay/render/__init__.py`
 - `tests/unit/test_render_spec.py` (NEW)
+- `tests/unit/test_render_raster.py`
+- `src/thucthengay/gis/crs.py`
 
 ## Change Log
 
 - 2026-05-25: Created story context from Epic 5 backlog and started implementation.
 - 2026-05-25: Implemented RenderSpec + builder + 13 tests. pytest 179 passed, ruff clean, smoke OK. Moved to review.
+- 2026-05-26: Addressed code-review hardening findings for geodesic window derivation, safe WGS84 bounds, background validation, and output pixel budget. Full gates passed; moved to done.

@@ -1,6 +1,11 @@
 """Rendering package."""
 
-from thucthengay.render.raster import RenderError, render_raster_layers
+from thucthengay.render.raster import (
+    RasterRenderResult,
+    RenderError,
+    render_raster_layers,
+    render_raster_layers_result,
+)
 from thucthengay.render.spec import (
     GeoWindow,
     RenderBackground,
@@ -17,6 +22,8 @@ __all__ = [
     "RenderLayerRef",
     "RenderSpec",
     "RenderSpecError",
+    "RasterRenderResult",
     "build_render_spec",
     "render_raster_layers",
+    "render_raster_layers_result",
 ]

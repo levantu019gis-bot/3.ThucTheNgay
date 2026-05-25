@@ -1,18 +1,19 @@
 ---
 project_name: '3.ThucTheNgay'
 user_name: 'Ongtu'
-date: '2026-05-25'
+date: '2026-05-26'
 sections_completed:
   - technology_stack
   - language_rules
   - framework_rules
   - testing_rules
   - quality_rules
+  - epic_5_rendering_engine_mandate
   - autonomous_execution_rules
   - workflow_rules
   - anti_patterns
 status: 'complete'
-rule_count: 37
+rule_count: 38
 optimized_for_llm: true
 ---
 
@@ -54,6 +55,13 @@ _File này chứa các quy tắc bắt buộc AI agents phải đọc trước k
 - Với bug: ghi rõ quan sát, giả thuyết, nguyên nhân đã xác nhận, và cách verify trong story/dev record hoặc implementation artifact nếu thay đổi không tầm thường.
 - Với feature/module mới: xác định owner module, input/output contract, dependency được phép, và tests trước khi patch.
 - Nếu phát hiện thông tin mâu thuẫn giữa PRD, architecture, story và code hiện tại: dừng lại ở kết luận thận trọng, ghi rõ nguồn mâu thuẫn, rồi chọn hướng ít phá vỡ nhất hoặc hỏi người dùng.
+
+### Epic 5 Rendering Engine Mandate
+
+- Epic 5 tập trung xây dựng Rendering Engine; mọi công việc code, fix bug, review, và thay đổi liên quan render phải được thực hiện kỹ lưỡng, có nghiên cứu giải pháp kỹ thuật trước khi chọn hướng triển khai.
+- Mọi quyết định trong render phải ưu tiên hiệu suất, khả năng kiểm soát bộ nhớ, khả năng hủy/tạm dừng tác vụ dài, và khả năng phục hồi khi dữ liệu hoặc trạng thái render bất thường.
+- Trước khi merge thay đổi render, phải chủ động lường trước và xử lý các trường hợp có thể gây crash, not responding, out of memory, giật lag, treo UI, render quá chậm, hoặc chiếm tài nguyên không kiểm soát.
+- Nếu thay đổi render có rủi ro hiệu năng hoặc ổn định, phải ghi rõ trade-off kỹ thuật, cách verify, và giới hạn còn lại trong story/dev record hoặc implementation artifact.
 
 ### Module Ownership Rules
 
@@ -148,4 +156,4 @@ _File này chứa các quy tắc bắt buộc AI agents phải đọc trước k
 - Cập nhật khi stack, workflow, hoặc module ownership thay đổi.
 - Xóa rule đã lỗi thời để tránh làm nhiễu context.
 
-Last Updated: 2026-05-25
+Last Updated: 2026-05-26

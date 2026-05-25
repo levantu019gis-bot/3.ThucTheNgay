@@ -8,6 +8,7 @@ from contextlib import contextmanager
 import numpy as np
 import pytest
 import rasterio
+from affine import Affine
 from rasterio.io import MemoryFile
 from rasterio.transform import from_bounds
 
@@ -60,26 +61,45 @@ def _make_memfile(
     rgb: tuple[int, int, int],
     width: int = 32,
     height: int = 32,
+    dtype: str = "uint8",
+    nodata: int | float | None = None,
+    alpha: np.ndarray | None = None,
+    transform: Affine | None = None,
+    nodata_right_half: bool = False,
 ) -> MemoryFile:
     """Return an open MemoryFile holding a tiny GeoTIFF; caller closes it."""
     left, bottom, right, top = bounds
-    transform = from_bounds(left, bottom, right, top, width, height)
-    data = np.zeros((3, height, width), dtype=np.uint8)
+    transform = transform or from_bounds(left, bottom, right, top, width, height)
+    band_count = 4 if alpha is not None else 3
+    data = np.zeros((band_count, height, width), dtype=np.dtype(dtype))
     data[0, :, :] = rgb[0]
     data[1, :, :] = rgb[1]
     data[2, :, :] = rgb[2]
+    if alpha is not None:
+        data[3, :, :] = alpha.astype(data.dtype)
+    if nodata is not None and nodata_right_half:
+        data[:, :, width // 2 :] = nodata
     profile = {
         "driver": "GTiff",
         "width": width,
         "height": height,
-        "count": 3,
-        "dtype": "uint8",
+        "count": band_count,
+        "dtype": dtype,
         "crs": crs,
         "transform": transform,
     }
+    if nodata is not None:
+        profile["nodata"] = nodata
     memfile = MemoryFile()
     with memfile.open(**profile) as ds:
         ds.write(data)
+        if alpha is not None:
+            ds.colorinterp = (
+                rasterio.enums.ColorInterp.red,
+                rasterio.enums.ColorInterp.green,
+                rasterio.enums.ColorInterp.blue,
+                rasterio.enums.ColorInterp.alpha,
+            )
     return memfile
 
 
@@ -125,10 +145,13 @@ class TestSingleLayerHappyPath:
         spec = _spec(layers=[layer], width=16, height=16, bg_color="#FFFFFF")
 
         with _opener_for({"L1.tif": memfile}) as opener:
-            canvas = render_raster_layers(spec, dataset_opener=opener)
+            result = render_raster_layers(spec, dataset_opener=opener)
+        canvas = result.canvas
 
         assert canvas.shape == (16, 16, 3)
         assert canvas.dtype == np.uint8
+        assert result.issues == ()
+        assert result.painted_layer_ids == ("L1",)
         # Center pixel should be from the layer, not the background
         cy, cx = 8, 8
         assert tuple(canvas[cy, cx].tolist()) == (10, 20, 30)
@@ -150,7 +173,7 @@ class TestCrsMismatch:
         spec = _spec(layers=[layer], width=16, height=16)
 
         with _opener_for({"L1.tif": memfile}) as opener:
-            canvas = render_raster_layers(spec, dataset_opener=opener)
+            canvas = render_raster_layers(spec, dataset_opener=opener).canvas
 
         # Layer fills the whole geo_window — center pixel must not be background
         assert tuple(canvas[8, 8].tolist()) == (50, 60, 70)
@@ -171,7 +194,7 @@ class TestCompositingOrder:
         spec = _spec(layers=layers, width=16, height=16)
 
         with _opener_for({"b.tif": bottom, "t.tif": top}) as opener:
-            canvas = render_raster_layers(spec, dataset_opener=opener)
+            canvas = render_raster_layers(spec, dataset_opener=opener).canvas
 
         assert tuple(canvas[8, 8].tolist()) == (200, 200, 200)
 
@@ -188,7 +211,7 @@ class TestPartialOverlap:
         spec = _spec(layers=[layer], width=32, height=16, bg_color="#FF0000")
 
         with _opener_for({"L1.tif": memfile}) as opener:
-            canvas = render_raster_layers(spec, dataset_opener=opener)
+            canvas = render_raster_layers(spec, dataset_opener=opener).canvas
 
         # West (col=4) covered by layer; east (col=28) still red background
         assert tuple(canvas[8, 4].tolist()) == (100, 100, 100)
@@ -209,9 +232,11 @@ class TestErrorHandling:
         with _opener_for(
             {"ok.tif": good}, unreadable_paths={"bad.tif"}
         ) as opener:
-            canvas = render_raster_layers(spec, dataset_opener=opener)
+            result = render_raster_layers(spec, dataset_opener=opener)
 
-        assert tuple(canvas[8, 8].tolist()) == (40, 40, 40)
+        assert tuple(result.canvas[8, 8].tolist()) == (40, 40, 40)
+        assert [issue.issue_id for issue in result.issues] == ["render.raster.unreadable"]
+        assert result.issues[0].layer_id == "BAD"
 
     def test_all_layers_fail_raises_render_error(self) -> None:
         layers = [
@@ -231,10 +256,112 @@ class TestErrorHandling:
 class TestCanvasShape:
     def test_empty_visible_layers_returns_background_canvas(self) -> None:
         spec = _spec(layers=[], width=24, height=12, bg_color="#0000FF")
-        canvas = render_raster_layers(spec)
+        canvas = render_raster_layers(spec).canvas
         assert canvas.shape == (12, 24, 3)
         assert canvas.dtype == np.uint8
         # All pixels should be background blue
         assert (canvas[..., 2] == 255).all()
         assert (canvas[..., 0] == 0).all()
         assert (canvas[..., 1] == 0).all()
+
+    def test_huge_output_raises_structured_issue_before_allocation(self) -> None:
+        spec = _spec(layers=[], width=100_000, height=100_000)
+
+        with pytest.raises(RenderError) as exc:
+            render_raster_layers(spec)
+
+        assert exc.value.issues[0].issue_id == "render.output.too_large"
+
+
+class TestRasterDataSafety:
+    def test_nodata_pixels_do_not_overwrite_background(self) -> None:
+        memfile = _make_memfile(
+            bounds=(106.0, 10.0, 107.0, 11.0),
+            crs=GEOGRAPHIC_CRS,
+            rgb=(10, 80, 160),
+            nodata=0,
+            nodata_right_half=True,
+        )
+        layer = RenderLayerRef(
+            layer_id="L1", source_path="L1.tif", cache_path="L1.tif", order=0
+        )
+        spec = _spec(layers=[layer], width=16, height=16, bg_color="#112233")
+
+        with _opener_for({"L1.tif": memfile}) as opener:
+            canvas = render_raster_layers(spec, dataset_opener=opener).canvas
+
+        assert tuple(canvas[8, 4].tolist()) == (10, 80, 160)
+        assert tuple(canvas[8, 12].tolist()) == (17, 34, 51)
+
+    def test_alpha_zero_pixels_do_not_overwrite_background(self) -> None:
+        alpha = np.full((8, 8), 255, dtype=np.uint8)
+        alpha[:, 4:] = 0
+        memfile = _make_memfile(
+            bounds=(106.0, 10.0, 107.0, 11.0),
+            crs=GEOGRAPHIC_CRS,
+            rgb=(10, 20, 30),
+            width=8,
+            height=8,
+            alpha=alpha,
+        )
+        layer = RenderLayerRef(
+            layer_id="L1", source_path="L1.tif", cache_path="L1.tif", order=0
+        )
+        spec = _spec(layers=[layer], width=8, height=8, bg_color="#FF0000")
+
+        with _opener_for({"L1.tif": memfile}) as opener:
+            canvas = render_raster_layers(spec, dataset_opener=opener).canvas
+
+        assert tuple(canvas[4, 2].tolist()) == (10, 20, 30)
+        assert tuple(canvas[4, 6].tolist()) == (255, 0, 0)
+
+    def test_uint16_raster_scales_instead_of_saturating(self) -> None:
+        memfile = _make_memfile(
+            bounds=(106.0, 10.0, 107.0, 11.0),
+            crs=GEOGRAPHIC_CRS,
+            rgb=(32768, 32768, 32768),
+            dtype="uint16",
+        )
+        layer = RenderLayerRef(
+            layer_id="L1", source_path="L1.tif", cache_path="L1.tif", order=0
+        )
+        spec = _spec(layers=[layer], width=8, height=8)
+
+        with _opener_for({"L1.tif": memfile}) as opener:
+            canvas = render_raster_layers(spec, dataset_opener=opener).canvas
+
+        assert tuple(canvas[4, 4].tolist()) == pytest.approx((128, 128, 128), abs=1)
+
+    def test_no_overlap_visible_layers_raise_structured_issue(self) -> None:
+        memfile = _make_memfile(
+            bounds=(110.0, 20.0, 111.0, 21.0), crs=GEOGRAPHIC_CRS, rgb=(10, 20, 30)
+        )
+        layer = RenderLayerRef(
+            layer_id="L1", source_path="L1.tif", cache_path="L1.tif", order=0
+        )
+        spec = _spec(layers=[layer], width=8, height=8)
+
+        with _opener_for({"L1.tif": memfile}) as opener:
+            with pytest.raises(RenderError) as exc:
+                render_raster_layers(spec, dataset_opener=opener)
+
+        assert exc.value.issues[0].issue_id == "render.raster.no_overlap"
+
+    def test_rotated_transform_reports_layer_issue(self) -> None:
+        rotated = Affine(0.01, 0.001, 106.0, 0.001, -0.01, 11.0)
+        memfile = _make_memfile(
+            bounds=(106.0, 10.0, 107.0, 11.0),
+            crs=GEOGRAPHIC_CRS,
+            rgb=(10, 20, 30),
+            transform=rotated,
+        )
+        layer = RenderLayerRef(
+            layer_id="L1", source_path="L1.tif", cache_path="L1.tif", order=0
+        )
+        spec = _spec(layers=[layer], width=8, height=8)
+
+        with _opener_for({"L1.tif": memfile}) as opener:
+            with pytest.raises(RenderError) as exc:
+                render_raster_layers(spec, dataset_opener=opener)
+
+        assert exc.value.issues[0].issue_id == "render.raster.unreadable"

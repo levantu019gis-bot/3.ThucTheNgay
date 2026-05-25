@@ -1,6 +1,6 @@
 # Story 5.2: Implement Raster Window and CRS Transform Rendering Core
 
-Status: review
+Status: done
 
 ## Story
 
@@ -57,6 +57,16 @@ So that the map output matches the area I framed in Review/Edit.
   - [x] All-fail case → `RenderError`.
   - [x] Output `dtype == uint8`, `shape == (output_height, output_width, 3)`.
 
+### Review Findings
+
+- [x] [Review][Patch] Return a structured `RasterRenderResult` containing canvas, non-fatal issues, and painted layer ids so partial layer failures are no longer silently swallowed.
+- [x] [Review][Patch] Add output pixel budget and `MemoryError` guards before/around allocation and per-layer reads to avoid OOM/freeze crashes.
+- [x] [Review][Patch] Preserve existing pixels for nodata/masked/alpha-transparent raster areas instead of overwriting lower layers/background.
+- [x] [Review][Patch] Scale non-`uint8` integer/float rasters to `uint8` deliberately instead of clipping/saturating common `uint16`/float GeoTIFFs.
+- [x] [Review][Patch] Guard CRS/window math against non-finite projection results, rotated/sheared transforms, malformed CRS exceptions, and all-visible-layers-no-overlap blank renders.
+- [x] [Review][Patch] Use floor/ceil destination pixel bounds and a bounded `WarpedVRT` memory limit to reduce seams and warp memory spikes.
+- [x] [Review][Patch] Expose a cancellation callback at the render-core boundary. Full Qt worker/thread orchestration remains Story 5.4, which owns two-stage preview rendering jobs.
+
 ## Dev Notes
 
 - Render canvas convention: numpy array shaped `(H, W, 3)` uint8 RGB; rows top→bottom, cols left→right; (row=0, col=0) corresponds to `(min_lon, max_lat)` of `geo_window` — i.e. north-west.
@@ -84,6 +94,11 @@ claude-opus-4-7
 - `conda run -n ttn-env ruff check .` — All checks passed.
 - `$env:PYTHONPATH='src'; conda run -n ttn-env python -m thucthengay --smoke` — App ready.
 - Initial failure `WarpedVRT does not permit boundless reads` resolved by removing `boundless=True` from `src.read()`; the window is already clipped to dataset bounds by `geographic_window_to_raster_window` so boundless is unnecessary.
+- `conda run -n ttn-env env UV_PROJECT_ENVIRONMENT=/home/ongtu/miniconda3/envs/ttn-env uv run --no-sync pytest tests/unit/test_render_spec.py tests/unit/test_render_raster.py tests/unit/test_gis_crs.py` — 35 passed after review patches.
+- `conda run -n ttn-env env UV_PROJECT_ENVIRONMENT=/home/ongtu/miniconda3/envs/ttn-env uv run --no-sync ruff check src/thucthengay/render src/thucthengay/gis tests/unit/test_render_spec.py tests/unit/test_render_raster.py tests/unit/test_gis_crs.py` — All checks passed after review patches.
+- `conda run -n ttn-env env UV_PROJECT_ENVIRONMENT=/home/ongtu/miniconda3/envs/ttn-env uv run --no-sync pytest` — 215 passed.
+- `conda run -n ttn-env env UV_PROJECT_ENVIRONMENT=/home/ongtu/miniconda3/envs/ttn-env uv run --no-sync ruff check .` — All checks passed.
+- `conda run -n ttn-env env UV_PROJECT_ENVIRONMENT=/home/ongtu/miniconda3/envs/ttn-env uv run --no-sync python -m thucthengay --smoke` — App ready.
 
 ### Completion Notes List
 
@@ -99,6 +114,9 @@ claude-opus-4-7
 - **Partial overlap**: `_geo_to_pixel` maps the clipped `covered_bbox` back to canvas coordinates, so uncovered area keeps the configured background color.
 - **CRS-mismatch verified**: synthetic EPSG:3857 raster reads through `WarpedVRT` and lands on the canvas correctly.
 - Tests use `rasterio.MemoryFile` exclusively — no disk IO, no network, no Qt event loop, no real GeoTIFF.
+- Review hardening changed the public render return to `RasterRenderResult` so callers can surface partial layer issues while still using the best-effort canvas.
+- The render core now rejects oversized outputs before allocation, catches `MemoryError`, handles nodata/masks/alpha, scales non-`uint8` inputs to bounded RGB, reports no-overlap renders, and rejects rotated/sheared source transforms with structured render issues.
+- The core exposes `is_cancelled`; Story 5.4 must run render calls off the Qt main thread and wire generation/cancel behavior for preview responsiveness.
 
 ### File List
 
@@ -110,8 +128,11 @@ claude-opus-4-7
 - `src/thucthengay/render/__init__.py`
 - `tests/unit/test_gis_crs.py` (NEW)
 - `tests/unit/test_render_raster.py` (NEW)
+- `src/thucthengay/render/spec.py`
+- `tests/unit/test_render_spec.py`
 
 ## Change Log
 
 - 2026-05-25: Created story context from Epic 5 backlog and started implementation.
 - 2026-05-25: Implemented gis/crs.py + render/raster.py with WarpedVRT-based CRS handling, windowed reads, and structured per-layer error issues. 14 new tests added (pytest 193 passed, ruff clean, smoke OK). Moved to review.
+- 2026-05-26: Addressed code-review hardening findings for structured partial issues, memory safety, nodata/alpha/dtype handling, CRS guards, no-overlap detection, and cancel hook. Full gates passed; moved to done.
