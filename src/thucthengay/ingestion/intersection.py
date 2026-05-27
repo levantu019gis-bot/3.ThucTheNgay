@@ -48,6 +48,7 @@ class TargetMatchingResult:
 
 
 TargetMatchProgressCallback = Callable[[int, int, TargetConfig, int], None]
+CheckpointCallback = Callable[[], None]
 
 
 def match_imagery_to_targets(
@@ -55,6 +56,7 @@ def match_imagery_to_targets(
     config_result: ConfigLoadResult,
     *,
     on_target_progress: TargetMatchProgressCallback | None = None,
+    checkpoint: CheckpointCallback | None = None,
 ) -> TargetMatchingResult:
     """Match valid scanned GeoTIFFs to enabled target boundaries."""
     matches: dict[str, list[ImageryTargetMatch]] = {
@@ -64,6 +66,8 @@ def match_imagery_to_targets(
     total_targets = len(config_result.enabled_targets)
 
     for target_index, target in enumerate(config_result.enabled_targets, start=1):
+        if checkpoint is not None:
+            checkpoint()
         target_paths = config_result.target_paths.get(target.id)
         if target_paths is None:
             issues.append(
@@ -90,6 +94,8 @@ def match_imagery_to_targets(
             continue
 
         for image in images:
+            if checkpoint is not None:
+                checkpoint()
             intersects, issue = _image_intersects_target(image, boundary)
             if issue is not None:
                 issues.append(issue)
@@ -105,6 +111,8 @@ def match_imagery_to_targets(
                 target,
                 len(matches[target.id]),
             )
+        if checkpoint is not None:
+            checkpoint()
 
     return TargetMatchingResult(matches=matches, issues=issues)
 

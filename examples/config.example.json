@@ -1,5 +1,15 @@
 {
   "schema_version": "1.0",
+  "filename_patterns": [
+    {
+      "name": "PlanetScope PSScene",
+      "pattern": "*_yyyyMMdd_HHmmss_*_*_cloud_cloud-percent"
+    },
+    {
+      "name": "PlanetScope simple",
+      "pattern": "yyyyMMdd_HHmmss_*"
+    }
+  ],
   "targets": [
     {
       "id": "DaBac",
@@ -8,7 +18,7 @@
       "name": "Đá Bắc",
       "alias": "Đá Bắc",
       "title": "Đá Bắc",
-      "geojson_file": "webapp_geojson/output_geojson/DaBac.geojson",
+      "geojson_file": "../webapp_geojson/output_geojson/DaBac.geojson",
       "coordinate": [
         111.49992614995688,
         17.09314950434196
@@ -29,7 +39,7 @@
         }
       },
       "export": {
-        "template_pptx_file": "examples/templates/target_001.template.pptx",
+        "template_pptx_file": "templates/target_001.template.pptx",
         "placeholders": [
           {
             "field": "map_image",
@@ -81,7 +91,7 @@
             ]
           ]
         },
-        "source_geojson_file": "webapp_geojson/output_geojson/DaBac.geojson",
+        "source_geojson_file": "../webapp_geojson/output_geojson/DaBac.geojson",
         "source_center_order": "lat_lon"
       }
     }    

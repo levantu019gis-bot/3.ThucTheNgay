@@ -97,6 +97,8 @@ def _status_text(state: JobState) -> str:
         return "Lấy dữ liệu thành công"
     if state == JobState.WARNING:
         return "Lấy dữ liệu hoàn tất với cảnh báo"
+    if state == JobState.CANCELLED:
+        return "Đã dừng lấy dữ liệu"
     if state == JobState.ERROR:
         return "Lấy dữ liệu thất bại"
     if state == JobState.RUNNING:

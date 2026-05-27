@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, time
 
@@ -18,6 +19,8 @@ from thucthengay.models import (
 )
 from thucthengay.workspace import WorkspaceService
 
+CheckpointCallback = Callable[[], None]
+
 
 @dataclass(frozen=True)
 class CompositionCreationResult:
@@ -31,12 +34,16 @@ def create_target_date_compositions(
     cache_result: CachePopulationResult,
     targets_by_id: dict[str, TargetConfig],
     workspace_service: WorkspaceService,
+    *,
+    checkpoint: CheckpointCallback | None = None,
 ) -> CompositionCreationResult:
     """Create one workspace composition per target/date group."""
     composition_ids: list[str] = []
     issues: list[Issue] = []
 
     for (target_id, date_key), layers in cache_result.layers_by_target_date.items():
+        if checkpoint is not None:
+            checkpoint()
         target = targets_by_id.get(target_id)
         if target is None:
             issues.append(
@@ -63,6 +70,8 @@ def create_target_date_compositions(
         )
         workspace_service.write_composition(composition)
         composition_ids.append(composition.composition_id)
+        if checkpoint is not None:
+            checkpoint()
 
     return CompositionCreationResult(composition_ids=composition_ids, issues=issues)
 

@@ -16,6 +16,7 @@ class JobState(StrEnum):
 
     IDLE = "idle"
     RUNNING = "running"
+    CANCELLED = "cancelled"
     SUCCESS = "success"
     WARNING = "warning"
     ERROR = "error"
@@ -49,7 +50,12 @@ class ProgressEvent(BaseModel):
     @property
     def terminal(self) -> bool:
         """Return true when the job has stopped emitting active progress."""
-        return self.state in {JobState.SUCCESS, JobState.WARNING, JobState.ERROR}
+        return self.state in {
+            JobState.CANCELLED,
+            JobState.SUCCESS,
+            JobState.WARNING,
+            JobState.ERROR,
+        }
 
 
 class QueuedProgressDispatcher:
@@ -96,7 +102,7 @@ class ActiveJobProgressModel:
         if event.state in {JobState.SUCCESS, JobState.WARNING}:
             self.completed_job_id = event.job_id
             self.active_job_id = None
-        elif event.state == JobState.ERROR:
+        elif event.state in {JobState.CANCELLED, JobState.ERROR}:
             self.completed_job_id = None
             self.active_job_id = None
         return True

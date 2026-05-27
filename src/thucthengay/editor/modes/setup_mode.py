@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QFormLayout, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFormLayout, QHBoxLayout, QPushButton, QVBoxLayout, QWidget
 
 from thucthengay.editor.widgets.ingestion_progress import IngestionProgressWidget
 from thucthengay.editor.widgets.ingestion_summary import IngestionSummaryWidget
@@ -29,6 +29,9 @@ class SetupMode(QWidget):
     """Setup screen containing required project path pickers."""
 
     ingestRequested = Signal(object)
+    pauseRequested = Signal()
+    resumeRequested = Signal()
+    stopRequested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -37,9 +40,15 @@ class SetupMode(QWidget):
         self.workspace_row = PathPickerRow("Workspace", PathKind.WORKSPACE_FOLDER)
         self.ingest_button = QPushButton("Lấy dữ liệu")
         self.ingest_button.setObjectName("setupIngestButton")
+        self.pause_button = QPushButton("Tạm dừng")
+        self.pause_button.setObjectName("setupPauseButton")
+        self.stop_button = QPushButton("Dừng")
+        self.stop_button.setObjectName("setupStopButton")
         self.progress_widget = IngestionProgressWidget()
         self.summary_widget = IngestionSummaryWidget()
         self._ingestion_running = False
+        self._ingestion_paused = False
+        self._ingestion_stopping = False
 
         form = QFormLayout()
         form.setContentsMargins(0, 0, 0, 0)
@@ -55,11 +64,19 @@ class SetupMode(QWidget):
         layout.addWidget(self.progress_widget)
         layout.addWidget(self.summary_widget)
         layout.addStretch(1)
-        layout.addWidget(self.ingest_button)
+        actions = QHBoxLayout()
+        actions.setContentsMargins(0, 0, 0, 0)
+        actions.setSpacing(8)
+        actions.addWidget(self.ingest_button)
+        actions.addWidget(self.pause_button)
+        actions.addWidget(self.stop_button)
+        layout.addLayout(actions)
 
         for row in self.path_rows:
             row.validationChanged.connect(self._update_action_state)
         self.ingest_button.clicked.connect(self._emit_ingest_requested)
+        self.pause_button.clicked.connect(self._toggle_pause_requested)
+        self.stop_button.clicked.connect(self._emit_stop_requested)
         self._update_action_state()
 
     @property
@@ -92,8 +109,19 @@ class SetupMode(QWidget):
 
     def _update_action_state(self, *_args: object) -> None:
         self.ingest_button.setEnabled(self.is_ready and not self._ingestion_running)
+        self.pause_button.setVisible(self._ingestion_running)
+        self.stop_button.setVisible(self._ingestion_running)
+        self.pause_button.setEnabled(self._ingestion_running and not self._ingestion_stopping)
+        self.stop_button.setEnabled(self._ingestion_running and not self._ingestion_stopping)
+        self.pause_button.setText("Tiếp tục" if self._ingestion_paused else "Tạm dừng")
         if self._ingestion_running:
             self.ingest_button.setToolTip("Đang lấy dữ liệu.")
+            self.pause_button.setToolTip(
+                "Tiếp tục lấy dữ liệu." if self._ingestion_paused else "Tạm dừng lấy dữ liệu."
+            )
+            self.stop_button.setToolTip(
+                "Đang yêu cầu dừng." if self._ingestion_stopping else "Dừng lấy dữ liệu."
+            )
             return
         if self.is_ready:
             self.ingest_button.setToolTip("Sẵn sàng lấy dữ liệu.")
@@ -115,10 +143,50 @@ class SetupMode(QWidget):
 
         self.ingestRequested.emit(selected_paths)
 
+    def _toggle_pause_requested(self) -> None:
+        if not self._ingestion_running or self._ingestion_stopping:
+            return
+        if self._ingestion_paused:
+            self.resumeRequested.emit()
+            return
+        self.pauseRequested.emit()
+
+    def _emit_stop_requested(self) -> None:
+        if not self._ingestion_running or self._ingestion_stopping:
+            return
+        self.stopRequested.emit()
+
     def start_ingestion_progress(self) -> None:
         """Show live progress and lock the ingest action during a run."""
         self._ingestion_running = True
+        self._ingestion_paused = False
+        self._ingestion_stopping = False
         self.progress_widget.start()
+        self._update_action_state()
+
+    def mark_ingestion_paused(self) -> None:
+        """Reflect that the active ingestion job is paused."""
+        if not self._ingestion_running:
+            return
+        self._ingestion_paused = True
+        self.progress_widget.status_label.setText("Đã tạm dừng lấy dữ liệu.")
+        self._update_action_state()
+
+    def mark_ingestion_resumed(self) -> None:
+        """Reflect that the active ingestion job has resumed."""
+        if not self._ingestion_running:
+            return
+        self._ingestion_paused = False
+        self.progress_widget.status_label.setText("Đang tiếp tục lấy dữ liệu.")
+        self._update_action_state()
+
+    def mark_ingestion_stopping(self) -> None:
+        """Reflect that the active ingestion job is stopping."""
+        if not self._ingestion_running:
+            return
+        self._ingestion_stopping = True
+        self._ingestion_paused = False
+        self.progress_widget.status_label.setText("Đang dừng lấy dữ liệu.")
         self._update_action_state()
 
     def show_ingestion_progress(self, event: ProgressEvent) -> None:
@@ -126,10 +194,14 @@ class SetupMode(QWidget):
         self.progress_widget.apply_event(event)
         if event.terminal:
             self._ingestion_running = False
+            self._ingestion_paused = False
+            self._ingestion_stopping = False
             self._update_action_state()
 
     def show_ingestion_summary(self, summary: IngestionSummary) -> None:
         """Show the latest ingestion summary in Setup mode."""
         self._ingestion_running = False
+        self._ingestion_paused = False
+        self._ingestion_stopping = False
         self._update_action_state()
         self.summary_widget.show_summary(summary)

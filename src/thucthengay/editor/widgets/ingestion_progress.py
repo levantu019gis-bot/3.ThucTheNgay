@@ -35,7 +35,9 @@ class IngestionProgressWidget(QWidget):
         ):
             label.setWordWrap(True)
 
-        grid = QGridLayout()
+        self.progress_body = QWidget()
+        self.progress_body.setObjectName("ingestionProgressBody")
+        grid = QGridLayout(self.progress_body)
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(12)
         grid.setVerticalSpacing(6)
@@ -51,25 +53,29 @@ class IngestionProgressWidget(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
         layout.addWidget(self.status_label)
-        layout.addLayout(grid)
+        layout.addWidget(self.progress_body)
 
         self.setVisible(False)
+        self.progress_body.setVisible(False)
         self._set_progress(self.image_progress, 0, 0)
         self._set_progress(self.target_progress, 0, 0)
 
     def start(self) -> None:
         """Reset and show progress for a new ingestion run."""
-        self.status_label.setText("Đang chuẩn bị lấy dữ liệu.")
+        self.status_label.setText("Đang khởi tạo lấy dữ liệu.")
         self.image_count_label.setText("Ảnh đã scan: 0/0")
         self.target_count_label.setText("Target đã scan: 0/0")
         self.current_target_label.setText("Target hiện tại: -")
         self._set_progress(self.image_progress, 0, 0)
         self._set_progress(self.target_progress, 0, 0)
+        self.progress_body.setVisible(False)
         self.setVisible(True)
 
     def apply_event(self, event: ProgressEvent) -> None:
         """Apply a job event without reading workspace state."""
         self.status_label.setText(_status_prefix(event.state, event.message))
+        if event.stage != "setup":
+            self.progress_body.setVisible(True)
 
         image_total = event.total_image_count or event.total or 0
         image_current = event.scanned_file_count
@@ -108,6 +114,8 @@ class IngestionProgressWidget(QWidget):
 
 
 def _status_prefix(state: JobState, message: str) -> str:
+    if state == JobState.CANCELLED:
+        return f"Đã dừng lấy dữ liệu: {message}"
     if state == JobState.ERROR:
         return f"Lấy dữ liệu thất bại: {message}"
     if state == JobState.WARNING:

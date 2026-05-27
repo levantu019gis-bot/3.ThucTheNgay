@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 from types import MethodType
 
@@ -151,7 +152,11 @@ def test_setup_mode_shows_live_ingestion_progress_and_locks_action(tmp_path: Pat
 
     setup.start_ingestion_progress()
     assert not setup.progress_widget.isHidden()
+    assert setup.progress_widget.progress_body.isHidden()
     assert not setup.ingest_button.isEnabled()
+    assert not setup.pause_button.isHidden()
+    assert not setup.stop_button.isHidden()
+    assert setup.pause_button.text() == "Tạm dừng"
 
     setup.show_ingestion_progress(
         ProgressEvent(
@@ -165,6 +170,7 @@ def test_setup_mode_shows_live_ingestion_progress_and_locks_action(tmp_path: Pat
             scanned_image_count=1,
         )
     )
+    assert not setup.progress_widget.progress_body.isHidden()
     assert setup.progress_widget.image_progress.value() == 2
     assert setup.progress_widget.image_progress.maximum() == 5
     assert setup.progress_widget.image_count_label.text() == "Ảnh đã scan: 2/5 (hợp lệ: 1)"
@@ -194,6 +200,35 @@ def test_setup_mode_shows_live_ingestion_progress_and_locks_action(tmp_path: Pat
         ProgressEvent(job_id="job", stage="complete", state=JobState.SUCCESS, message="Xong.")
     )
     assert setup.ingest_button.isEnabled()
+    assert setup.pause_button.isHidden()
+    assert setup.stop_button.isHidden()
+
+
+def test_setup_mode_emits_pause_resume_and_stop_controls(tmp_path: Path) -> None:
+    qapp()
+    setup = SetupMode()
+    pauses: list[bool] = []
+    resumes: list[bool] = []
+    stops: list[bool] = []
+    setup.pauseRequested.connect(lambda: pauses.append(True))
+    setup.resumeRequested.connect(lambda: resumes.append(True))
+    setup.stopRequested.connect(lambda: stops.append(True))
+
+    setup.start_ingestion_progress()
+    setup.pause_button.click()
+    assert pauses == [True]
+
+    setup.mark_ingestion_paused()
+    assert setup.pause_button.text() == "Tiếp tục"
+    setup.pause_button.click()
+    assert resumes == [True]
+
+    setup.mark_ingestion_resumed()
+    setup.stop_button.click()
+    assert stops == [True]
+    setup.mark_ingestion_stopping()
+    assert not setup.pause_button.isEnabled()
+    assert not setup.stop_button.isEnabled()
 
 
 def test_app_shell_runs_ingestion_when_setup_requests_it(
@@ -268,11 +303,11 @@ def test_app_shell_runs_ingestion_when_setup_requests_it(
         )
 
     monkeypatch.setattr(
-        "thucthengay.editor.app_shell.load_project_config",
+        "thucthengay.editor.ingestion_worker.load_project_config",
         fake_load_project_config,
     )
     monkeypatch.setattr(
-        "thucthengay.editor.app_shell.run_ingestion_job",
+        "thucthengay.editor.ingestion_worker.run_ingestion_job",
         fake_run_ingestion_job,
     )
 
@@ -298,6 +333,10 @@ def test_app_shell_runs_ingestion_when_setup_requests_it(
     shell.setup_mode.workspace_row.set_path(workspace_folder)
 
     shell.setup_mode.ingest_button.click()
+    deadline = time.monotonic() + 3
+    while shell._ingestion_thread is not None and time.monotonic() < deadline:
+        qapp().processEvents()
+        time.sleep(0.01)
 
     assert calls["config_path"] == config_file.resolve()
     job_kwargs = calls["job_kwargs"]

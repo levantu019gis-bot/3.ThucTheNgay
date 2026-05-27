@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(python3 \"D:\\\\TU_KXOA\\\\5.TTN\\\\gis_ttn\\\\_bmad\\\\scripts\\\\resolve_customization.py\" --skill \"D:\\\\TU_KXOA\\\\5.TTN\\\\gis_ttn\\\\.claude\\\\skills\\\\bmad-dev-story\" --key workflow)",
-      "PowerShell(conda run *)"
+      "PowerShell(conda run *)",
+      "Bash(conda run *)",
+      "Bash(Get-ChildItem -Path \"D:\\\\TU_KXOA\\\\5.TTN\\\\gis_ttn\" -Recurse -Directory)",
+      "Bash(Select-Object -First 30 FullName)"
     ]
   }
 }

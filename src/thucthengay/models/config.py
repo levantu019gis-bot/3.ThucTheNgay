@@ -36,6 +36,37 @@ class GridConfig(BaseModel):
     style: dict[str, Any] = Field(default_factory=dict)
 
 
+class FilenamePatternConfig(BaseModel):
+    """Configurable filename pattern for metadata extraction.
+
+    Tokens separated by ``separator`` (default ``_``):
+    - ``yyyyMMdd``      → capture date
+    - ``HHmmss``        → capture time
+    - ``cloud-percent`` → cloud cover percentage
+    - ``*``             → wildcard (skip one segment)
+    - anything else     → literal match
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    pattern: str
+    separator: str = "_"
+
+    @field_validator("pattern")
+    @classmethod
+    def pattern_must_have_extractable_token(cls, value: str) -> str:
+        extractable = {"yyyyMMdd", "HHmmss", "cloud-percent"}
+        tokens = value.split("_")
+        if not any(token in extractable for token in tokens):
+            msg = (
+                "pattern must contain at least one extractable token"
+                " (yyyyMMdd, HHmmss, cloud-percent)"
+            )
+            raise ValueError(msg)
+        return value
+
+
 class TargetExportConfig(BaseModel):
     """Target-specific export references."""
 
@@ -93,4 +124,5 @@ class ProjectConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: str = "1.0"
+    filename_patterns: list[FilenamePatternConfig] = Field(default_factory=list)
     targets: list[TargetConfig]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass
 from hashlib import sha1
 from pathlib import Path
@@ -12,6 +13,7 @@ from thucthengay.models import ImageLayer, Issue, IssueScope, IssueSeverity
 from thucthengay.workspace import WorkspaceService
 
 UNKNOWN_DATE_KEY = "unknown_date"
+CheckpointCallback = Callable[[], None]
 
 
 @dataclass(frozen=True)
@@ -29,6 +31,7 @@ def populate_workspace_cache(
     *,
     clear_existing: bool = False,
     clear_confirmed: bool = False,
+    checkpoint: CheckpointCallback | None = None,
 ) -> CachePopulationResult:
     """Copy matched imagery into deterministic target/date cache folders."""
     cache_recreated = False
@@ -43,7 +46,11 @@ def populate_workspace_cache(
     seen_identities: set[tuple[str, str, str]] = set()
 
     for target_id, matches in matching_result.matches.items():
+        if checkpoint is not None:
+            checkpoint()
         for match in matches:
+            if checkpoint is not None:
+                checkpoint()
             source_path = match.image.path.expanduser().resolve()
             date_key = _date_key(match.image.layer)
             group_key = (target_id, date_key)
@@ -60,6 +67,8 @@ def populate_workspace_cache(
             except OSError as error:
                 issues.append(_copy_failed_issue(source_path, error))
                 continue
+            if checkpoint is not None:
+                checkpoint()
 
             layers_by_target_date[group_key].append(
                 _cached_layer(

@@ -10,6 +10,7 @@ from rasterio.transform import from_origin
 from thucthengay.config.service import ConfigLoadResult, ResolvedTargetPaths
 from thucthengay.jobs import (
     ActiveJobProgressModel,
+    JobControl,
     JobState,
     ProgressEvent,
     QueuedProgressDispatcher,
@@ -233,3 +234,27 @@ def test_ingestion_job_reports_fatal_setup_error_without_workspace_completion(
     assert events[-1].state == JobState.ERROR
     assert events[-1].scanned_image_count == 0
     assert workspace.paths.manifest.exists() is False
+
+
+def test_ingestion_job_can_be_cancelled_before_scan(tmp_path: Path) -> None:
+    imagery = tmp_path / "imagery"
+    imagery.mkdir()
+    boundary = tmp_path / "target_001.geojson"
+    write_geojson(boundary)
+    events: list[ProgressEvent] = []
+    control = JobControl()
+    control.request_cancel()
+
+    result = run_ingestion_job(
+        job_id="job-cancelled",
+        config_result=config_result_for(target_config(), boundary),
+        imagery_folder=imagery,
+        workspace_service=WorkspaceService(tmp_path / "workspace"),
+        control=control,
+        publish=events.append,
+    )
+
+    assert result.state == JobState.CANCELLED
+    assert result.composition_ids == []
+    assert events[-1].state == JobState.CANCELLED
+    assert events[-1].stage == "cancelled"

@@ -6,8 +6,9 @@ from dataclasses import dataclass
 from enum import StrEnum
 from math import isfinite
 
+import numpy as np
 from PySide6.QtCore import QPoint, QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QGraphicsScene, QGraphicsView
 
 from thucthengay.models import Composition, ImageLayer
@@ -66,6 +67,7 @@ class GisCanvasWidget(QGraphicsView):
         self._drag_changed = False
         self._last_frame_rect = QRectF()
         self._last_applied_render_label: str | None = None
+        self._rendered_pixmap: QPixmap | None = None
         self._redraw()
 
     @property
@@ -112,6 +114,7 @@ class GisCanvasWidget(QGraphicsView):
     def set_composition(self, composition: Composition | None) -> None:
         """Load the selected composition into the canvas without emitting edits."""
         self._last_applied_render_label = None
+        self._rendered_pixmap = None
         if composition is None:
             self._composition_id = None
             self._visible_layers = []
@@ -161,12 +164,19 @@ class GisCanvasWidget(QGraphicsView):
             scale=self._scale,
         )
 
-    def apply_render_result(self, token: RenderRequestToken, label: str) -> bool:
+    def apply_render_result(
+        self,
+        token: RenderRequestToken,
+        label: str,
+        canvas: np.ndarray | None = None,
+    ) -> bool:
         """Apply a render result only if it matches the latest view generation."""
         current = self.begin_render_request()
         if token != current:
             return False
 
+        if canvas is not None:
+            self._rendered_pixmap = _numpy_to_pixmap(canvas)
         self._state = GisCanvasState.READY
         self._state_message = f"Canvas đã cập nhật: {label}"
         self._last_applied_render_label = label
@@ -255,6 +265,7 @@ class GisCanvasWidget(QGraphicsView):
             self._state = GisCanvasState.NO_VISIBLE_LAYER
             self._state_message = "Không có layer đang bật để hiển thị trên canvas."
         self._last_applied_render_label = None
+        self._rendered_pixmap = None
         self._bump_generation()
 
     def _bump_generation(self) -> None:
@@ -287,6 +298,17 @@ class GisCanvasWidget(QGraphicsView):
 
     def _draw_layers(self, frame: QRectF) -> None:
         if not self._visible_layers:
+            return
+        if self._rendered_pixmap is not None:
+            scaled = self._rendered_pixmap.scaled(
+                int(frame.width()),
+                int(frame.height()),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            px = frame.x() + (frame.width() - scaled.width()) / 2
+            py = frame.y() + (frame.height() - scaled.height()) / 2
+            self._scene.addPixmap(scaled).setPos(px, py)
             return
         colors = ["#637f5f", "#7d8e9c", "#8e7d58", "#596a84"]
         base_rect = frame.adjusted(-54, -34, 54, 34)
@@ -332,6 +354,21 @@ def _short_layer_name(layer: ImageLayer) -> str:
     path = layer.cache_path or layer.source_path
     name = path.rsplit("/", maxsplit=1)[-1].rsplit("\\", maxsplit=1)[-1]
     return name if len(name) <= 42 else f"{name[:18]}...{name[-18:]}"
+
+
+def _numpy_to_pixmap(canvas: np.ndarray) -> QPixmap:
+    height, width = canvas.shape[:2]
+    if canvas.ndim == 2:
+        image = QImage(canvas.data, width, height, width, QImage.Format.Format_Grayscale8)
+    elif canvas.shape[2] == 3:
+        rgb = np.ascontiguousarray(canvas)
+        image = QImage(rgb.data, width, height, 3 * width, QImage.Format.Format_RGB888)
+    else:
+        rgba = np.ascontiguousarray(canvas[:, :, :4])
+        image = QImage(
+            rgba.data, width, height, 4 * width, QImage.Format.Format_RGBA8888
+        )
+    return QPixmap.fromImage(image.copy())
 
 
 def _clamp(value: float, minimum: float, maximum: float) -> float:

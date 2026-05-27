@@ -10,7 +10,7 @@ from json import JSONDecodeError
 from pathlib import Path
 from typing import Any
 
-from thucthengay.models import MetadataSource
+from thucthengay.models import FilenamePatternConfig, MetadataSource
 
 _PLANETSCOPE_PREFIX_RE = re.compile(
     r"^(?P<date>\d{8})[_-](?P<time>\d{6})(?:[_-](?P<rest>.+))?$"
@@ -43,11 +43,12 @@ def parse_business_metadata(
     geotiff_path: Path,
     *,
     embedded_tags: dict[str, Any] | None = None,
+    filename_patterns: list[FilenamePatternConfig] | None = None,
 ) -> ParsedBusinessMetadata:
     """Parse layer business metadata with sidecar > filename > embedded precedence."""
     candidates = [
         _parse_sidecar_metadata(geotiff_path),
-        _parse_filename_metadata(geotiff_path),
+        _parse_filename_metadata(geotiff_path, filename_patterns=filename_patterns),
         _parse_mapping_metadata(embedded_tags or {}, MetadataSource.EMBEDDED),
     ]
 
@@ -78,7 +79,17 @@ def parse_business_metadata(
     )
 
 
-def _parse_filename_metadata(path: Path) -> ParsedBusinessMetadata:
+def _parse_filename_metadata(
+    path: Path,
+    *,
+    filename_patterns: list[FilenamePatternConfig] | None = None,
+) -> ParsedBusinessMetadata:
+    if filename_patterns:
+        for pattern in filename_patterns:
+            result = _try_pattern_match(path.stem, pattern)
+            if result.field_sources:
+                return result
+
     match = _PLANETSCOPE_PREFIX_RE.match(path.stem)
     capture_date: date | None = None
     capture_time: time | None = None
@@ -95,6 +106,55 @@ def _parse_filename_metadata(path: Path) -> ParsedBusinessMetadata:
         field_sources["cloud_percent"] = MetadataSource.FILENAME
 
     source_identifier = path.stem if match else None
+    if source_identifier:
+        field_sources["source_identifier"] = MetadataSource.FILENAME
+
+    return ParsedBusinessMetadata(
+        capture_date=capture_date,
+        capture_time=capture_time,
+        cloud_percent=cloud_percent,
+        source_identifier=source_identifier,
+        field_sources=field_sources,
+    )
+
+
+def _try_pattern_match(
+    stem: str, pattern: FilenamePatternConfig
+) -> ParsedBusinessMetadata:
+    parts = stem.split(pattern.separator)
+    tokens = pattern.pattern.split(pattern.separator)
+    if len(parts) != len(tokens):
+        return ParsedBusinessMetadata()
+
+    capture_date: date | None = None
+    capture_time: time | None = None
+    cloud_percent: float | None = None
+    field_sources: dict[str, MetadataSource] = {}
+
+    for part, token in zip(parts, tokens, strict=True):
+        if token == "yyyyMMdd":
+            try:
+                capture_date = datetime.strptime(part, "%Y%m%d").date()
+                field_sources["capture_date"] = MetadataSource.FILENAME
+            except ValueError:
+                return ParsedBusinessMetadata()
+        elif token == "HHmmss":
+            try:
+                capture_time = datetime.strptime(part, "%H%M%S").time()
+                field_sources["capture_time"] = MetadataSource.FILENAME
+            except ValueError:
+                return ParsedBusinessMetadata()
+        elif token == "cloud-percent":
+            parsed = _parse_cloud_value(part)
+            if parsed is not None:
+                cloud_percent = parsed
+                field_sources["cloud_percent"] = MetadataSource.FILENAME
+        elif token == "*":
+            continue
+        elif token != part:
+            return ParsedBusinessMetadata()
+
+    source_identifier = stem if field_sources else None
     if source_identifier:
         field_sources["source_identifier"] = MetadataSource.FILENAME
 

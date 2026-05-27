@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import math
+import os
 from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from hashlib import sha1
 from pathlib import Path
@@ -14,6 +16,7 @@ from rasterio.errors import RasterioIOError
 
 from thucthengay.ingestion.metadata_parser import parse_business_metadata
 from thucthengay.models import (
+    FilenamePatternConfig,
     ImageLayer,
     Issue,
     IssueScope,
@@ -69,28 +72,64 @@ class ImageryScanResult:
 
 
 ScanProgressCallback = Callable[[int, int, int], None]
+CheckpointCallback = Callable[[], None]
+
+
+_DEFAULT_SCAN_WORKERS = min(8, (os.cpu_count() or 4))
 
 
 def scan_imagery_folder(
     folder: str | Path,
     *,
     on_progress: ScanProgressCallback | None = None,
+    checkpoint: CheckpointCallback | None = None,
+    max_workers: int | None = None,
+    filename_patterns: list[FilenamePatternConfig] | None = None,
 ) -> ImageryScanResult:
-    """Recursively scan an imagery folder for usable GeoTIFFs."""
+    """Recursively scan an imagery folder for usable GeoTIFFs.
+
+    Uses a thread pool to overlap rasterio I/O across files.
+    """
     root = Path(folder).expanduser().resolve()
     if not root.is_dir():
         msg = f"Imagery folder is not a directory: {root}"
         raise NotADirectoryError(msg)
 
-    rasters: list[ScannedGeoTiff] = []
-    warnings: list[Issue] = []
     geotiff_paths = discover_geotiffs(root)
     total = len(geotiff_paths)
     if on_progress is not None:
         on_progress(0, total, 0)
+    if not geotiff_paths:
+        return ImageryScanResult(rasters=[], warnings=[])
 
-    for index, geotiff_path in enumerate(geotiff_paths, start=1):
-        scanned, issue = _scan_geotiff(geotiff_path)
+    workers = max_workers if max_workers is not None else _DEFAULT_SCAN_WORKERS
+    if workers <= 1 or total == 1:
+        return _scan_sequential(
+            geotiff_paths, on_progress=on_progress, checkpoint=checkpoint,
+            filename_patterns=filename_patterns,
+        )
+
+    return _scan_parallel(
+        geotiff_paths, workers=workers, on_progress=on_progress, checkpoint=checkpoint,
+        filename_patterns=filename_patterns,
+    )
+
+
+def _scan_sequential(
+    paths: list[Path],
+    *,
+    on_progress: ScanProgressCallback | None,
+    checkpoint: CheckpointCallback | None,
+    filename_patterns: list[FilenamePatternConfig] | None,
+) -> ImageryScanResult:
+    rasters: list[ScannedGeoTiff] = []
+    warnings: list[Issue] = []
+    total = len(paths)
+
+    for index, geotiff_path in enumerate(paths, start=1):
+        if checkpoint is not None:
+            checkpoint()
+        scanned, issue = _scan_geotiff(geotiff_path, filename_patterns)
         if issue is not None:
             warnings.append(issue)
         if scanned is not None:
@@ -100,7 +139,50 @@ def scan_imagery_folder(
                 warnings.append(missing_issue)
         if on_progress is not None:
             on_progress(index, total, len(rasters))
+        if checkpoint is not None:
+            checkpoint()
 
+    return ImageryScanResult(rasters=rasters, warnings=warnings)
+
+
+def _scan_parallel(
+    paths: list[Path],
+    *,
+    workers: int,
+    on_progress: ScanProgressCallback | None,
+    checkpoint: CheckpointCallback | None,
+    filename_patterns: list[FilenamePatternConfig] | None,
+) -> ImageryScanResult:
+    rasters: list[ScannedGeoTiff] = []
+    warnings: list[Issue] = []
+    total = len(paths)
+    scanned_count = 0
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures: list[Future[tuple[ScannedGeoTiff | None, Issue | None]]] = [
+            executor.submit(_scan_geotiff, p, filename_patterns) for p in paths
+        ]
+        try:
+            for future in as_completed(futures):
+                if checkpoint is not None:
+                    checkpoint()
+                scanned, issue = future.result()
+                scanned_count += 1
+                if issue is not None:
+                    warnings.append(issue)
+                if scanned is not None:
+                    rasters.append(scanned)
+                    missing_issue = _missing_metadata_warning(scanned)
+                    if missing_issue is not None:
+                        warnings.append(missing_issue)
+                if on_progress is not None:
+                    on_progress(scanned_count, total, len(rasters))
+        except BaseException:
+            for f in futures:
+                f.cancel()
+            raise
+
+    rasters.sort(key=lambda s: s.path)
     return ImageryScanResult(rasters=rasters, warnings=warnings)
 
 
@@ -114,7 +196,10 @@ def discover_geotiffs(folder: str | Path) -> list[Path]:
     )
 
 
-def _scan_geotiff(path: Path) -> tuple[ScannedGeoTiff | None, Issue | None]:
+def _scan_geotiff(
+    path: Path,
+    filename_patterns: list[FilenamePatternConfig] | None = None,
+) -> tuple[ScannedGeoTiff | None, Issue | None]:
     try:
         raster = _read_raster_metadata(path)
     except RasterioIOError as error:
@@ -133,7 +218,9 @@ def _scan_geotiff(path: Path) -> tuple[ScannedGeoTiff | None, Issue | None]:
             "Kiểm tra CRS, transform và bounds của file trước khi chạy ingest lại.",
         )
 
-    business_metadata = parse_business_metadata(path, embedded_tags=raster.tags)
+    business_metadata = parse_business_metadata(
+        path, embedded_tags=raster.tags, filename_patterns=filename_patterns,
+    )
     metadata_status = (
         MetadataStatus.NEEDS_MANUAL_CORRECTION
         if business_metadata.capture_date is None or business_metadata.capture_time is None

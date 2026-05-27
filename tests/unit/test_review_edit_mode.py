@@ -849,7 +849,7 @@ def test_review_edit_gis_canvas_saves_pan_zoom_and_marks_preview_stale(
     zoomed = service.read_composition("alpha__20260525")
     assert zoomed.view.scale == 25000
     assert zoomed.view.rotation == 0
-    assert mode.gis_canvas.state() == GisCanvasState.STALE
+    assert mode.gis_canvas.state() in {GisCanvasState.STALE, GisCanvasState.LOADING}
     assert mode.tree_model.index_for_composition_id("alpha__20260525").data(
         CompositionTreeRole.STATUS_TEXT
     ) == "Cần kiểm tra lại"

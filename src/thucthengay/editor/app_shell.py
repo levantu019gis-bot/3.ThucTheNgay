@@ -5,13 +5,15 @@ from __future__ import annotations
 import sys
 from uuid import uuid4
 
+from PySide6.QtCore import QThread
 from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget
 
-from thucthengay.config import load_project_config
+from thucthengay.config import ConfigLoadResult
+from thucthengay.editor.ingestion_worker import IngestionWorker
 from thucthengay.editor.modes.export_mode import ExportMode
 from thucthengay.editor.modes.review_edit_mode import ReviewEditMode
 from thucthengay.editor.modes.setup_mode import SetupMode, SetupPaths
-from thucthengay.jobs import IngestionSummary, JobState, run_ingestion_job
+from thucthengay.jobs import IngestionJobResult, IngestionSummary, JobControl, JobState
 from thucthengay.workspace import WorkspaceService
 
 
@@ -24,6 +26,9 @@ class AppShell(QMainWindow):
         self.setup_mode = SetupMode()
         self.review_edit_mode = ReviewEditMode()
         self.export_mode = ExportMode()
+        self._ingestion_thread: QThread | None = None
+        self._ingestion_worker: IngestionWorker | None = None
+        self._ingestion_control: JobControl | None = None
 
         self.mode_tabs = QTabWidget()
         self.mode_tabs.setObjectName("modeTabs")
@@ -31,36 +36,80 @@ class AppShell(QMainWindow):
         self.mode_tabs.addTab(self.review_edit_mode, "Review/Edit")
         self.mode_tabs.addTab(self.export_mode, "Export")
         self.setup_mode.ingestRequested.connect(self._run_ingestion)
+        self.setup_mode.pauseRequested.connect(self._pause_ingestion)
+        self.setup_mode.resumeRequested.connect(self._resume_ingestion)
+        self.setup_mode.stopRequested.connect(self._stop_ingestion)
         self.export_mode.jumpRequested.connect(self._jump_to_review_context)
 
         self.setCentralWidget(self.mode_tabs)
         self.resize(1280, 720)
 
     def _run_ingestion(self, setup_paths: SetupPaths) -> None:
-        config_result = load_project_config(setup_paths.config_file)
+        if self._ingestion_thread is not None:
+            return
+
         workspace_service = WorkspaceService(setup_paths.workspace_folder)
         job_id = f"ingestion-{uuid4().hex}"
-        self.setup_mode.start_ingestion_progress()
-
-        def publish_progress(event) -> None:
-            self.setup_mode.show_ingestion_progress(event)
-            app = QApplication.instance()
-            if app is not None:
-                app.processEvents()
-
-        result = run_ingestion_job(
+        control = JobControl()
+        thread = QThread(self)
+        worker = IngestionWorker(
             job_id=job_id,
-            config_result=config_result,
+            config_file=setup_paths.config_file,
             imagery_folder=setup_paths.imagery_input_folder,
             workspace_service=workspace_service,
-            publish=publish_progress,
+            control=control,
         )
+        worker.moveToThread(thread)
+
+        self._ingestion_thread = thread
+        self._ingestion_worker = worker
+        self._ingestion_control = control
+        self.setup_mode.start_ingestion_progress()
+
+        thread.started.connect(worker.run)
+        worker.progress.connect(self.setup_mode.show_ingestion_progress)
+        worker.finished.connect(self._finish_ingestion)
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._clear_ingestion_worker)
+        thread.start()
+
+    def _pause_ingestion(self) -> None:
+        if self._ingestion_control is None:
+            return
+        self._ingestion_control.request_pause()
+        self.setup_mode.mark_ingestion_paused()
+
+    def _resume_ingestion(self) -> None:
+        if self._ingestion_control is None:
+            return
+        self._ingestion_control.resume()
+        self.setup_mode.mark_ingestion_resumed()
+
+    def _stop_ingestion(self) -> None:
+        if self._ingestion_control is None:
+            return
+        self._ingestion_control.request_cancel()
+        self.setup_mode.mark_ingestion_stopping()
+
+    def _clear_ingestion_worker(self) -> None:
+        self._ingestion_thread = None
+        self._ingestion_worker = None
+        self._ingestion_control = None
+
+    def _finish_ingestion(
+        self,
+        result: IngestionJobResult,
+        config_result: ConfigLoadResult,
+        workspace_service: WorkspaceService,
+    ) -> None:
         summary = IngestionSummary.from_job_result(
             result,
-            workspace_path=setup_paths.workspace_folder,
+            workspace_path=workspace_service.paths.root,
         )
         self.setup_mode.show_ingestion_summary(summary)
-        if result.state == JobState.ERROR:
+        if result.state not in {JobState.SUCCESS, JobState.WARNING}:
             return
 
         self.review_edit_mode.load_workspace(

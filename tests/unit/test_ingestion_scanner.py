@@ -8,7 +8,8 @@ import rasterio
 from rasterio.transform import from_origin
 
 from thucthengay.ingestion import scan_imagery_folder
-from thucthengay.models import IssueSeverity, MetadataSource, MetadataStatus
+from thucthengay.ingestion.metadata_parser import _try_pattern_match
+from thucthengay.models import FilenamePatternConfig, IssueSeverity, MetadataSource, MetadataStatus
 
 
 def write_geotiff(
@@ -163,3 +164,85 @@ def test_geotiff_without_valid_footprint_is_warned_and_excluded(tmp_path: Path) 
     assert len(result.warnings) == 1
     assert result.warnings[0].issue_id == "imagery.invalid_footprint"
     assert str(geotiff) in result.warnings[0].message
+
+
+# --- FilenamePattern matching tests ---
+
+
+def _pattern(name: str, pattern: str, separator: str = "_") -> FilenamePatternConfig:
+    return FilenamePatternConfig(name=name, pattern=pattern, separator=separator)
+
+
+class TestTryPatternMatch:
+    def test_psscene_full_pattern(self) -> None:
+        pat = _pattern("ps", "*_yyyyMMdd_HHmmss_*_*_cloud_cloud-percent")
+        result = _try_pattern_match("PSScene_20260526_024535_12_255b_cloud_10.0", pat)
+        assert result.capture_date is not None
+        assert result.capture_date.isoformat() == "2026-05-26"
+        assert result.capture_time is not None
+        assert result.capture_time.isoformat() == "02:45:35"
+        assert result.cloud_percent == 10.0
+        assert result.field_sources["capture_date"] == MetadataSource.FILENAME
+        assert result.field_sources["capture_time"] == MetadataSource.FILENAME
+        assert result.field_sources["cloud_percent"] == MetadataSource.FILENAME
+        assert result.source_identifier is not None
+
+    def test_simple_date_time_pattern(self) -> None:
+        pat = _pattern("simple", "yyyyMMdd_HHmmss_*")
+        result = _try_pattern_match("20260101_120000_scene", pat)
+        assert result.capture_date is not None
+        assert result.capture_date.isoformat() == "2026-01-01"
+        assert result.capture_time is not None
+        assert result.capture_time.isoformat() == "12:00:00"
+        assert result.cloud_percent is None
+
+    def test_segment_count_mismatch_returns_empty(self) -> None:
+        pat = _pattern("ps", "*_yyyyMMdd_HHmmss")
+        result = _try_pattern_match("PSScene_20260526_024535_extra", pat)
+        assert result.field_sources == {}
+
+    def test_literal_mismatch_returns_empty(self) -> None:
+        pat = _pattern("ps", "*_yyyyMMdd_HHmmss_cloud_cloud-percent")
+        result = _try_pattern_match("PSScene_20260526_024535_rain_10.0", pat)
+        assert result.field_sources == {}
+
+    def test_invalid_date_returns_empty(self) -> None:
+        pat = _pattern("ps", "yyyyMMdd_HHmmss_*")
+        result = _try_pattern_match("99991301_120000_scene", pat)
+        assert result.field_sources == {}
+
+    def test_invalid_time_returns_empty(self) -> None:
+        pat = _pattern("ps", "yyyyMMdd_HHmmss_*")
+        result = _try_pattern_match("20260101_259999_scene", pat)
+        assert result.field_sources == {}
+
+    def test_cloud_percent_optional_in_pattern(self) -> None:
+        pat = _pattern("ps", "*_yyyyMMdd_HHmmss_cloud-percent")
+        result = _try_pattern_match("PSScene_20260526_024535_notanumber", pat)
+        assert result.capture_date is not None
+        assert result.cloud_percent is None
+
+    def test_date_only_pattern(self) -> None:
+        pat = _pattern("date", "*_yyyyMMdd")
+        result = _try_pattern_match("mosaic_20260526", pat)
+        assert result.capture_date is not None
+        assert result.capture_date.isoformat() == "2026-05-26"
+        assert result.capture_time is None
+
+
+def test_scan_with_filename_patterns_extracts_metadata(tmp_path: Path) -> None:
+    geotiff = tmp_path / "PSScene_20260526_024535_12_255b_cloud_10.0.tif"
+    write_geotiff(geotiff)
+
+    patterns = [_pattern("ps", "*_yyyyMMdd_HHmmss_*_*_cloud_cloud-percent")]
+    result = scan_imagery_folder(tmp_path, filename_patterns=patterns)
+
+    assert len(result.rasters) == 1
+    layer = result.rasters[0].layer
+    assert layer.capture_date is not None
+    assert layer.capture_date.isoformat() == "2026-05-26"
+    assert layer.capture_time is not None
+    assert layer.capture_time.isoformat() == "02:45:35"
+    assert layer.cloud_percent == 10.0
+    assert layer.metadata_status == MetadataStatus.VALID
+    assert layer.metadata_source == MetadataSource.FILENAME

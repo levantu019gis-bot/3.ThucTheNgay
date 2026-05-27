@@ -8,6 +8,7 @@ from thucthengay.models.composition import (
     ViewState,
 )
 from thucthengay.models.config import (
+    FilenamePatternConfig,
     GridConfig,
     GridInterval,
     ProjectConfig,
@@ -85,6 +86,7 @@ __all__ = [
     "FinalRenderLogEntry",
     "FinalRenderResult",
     "FinalRenderStatus",
+    "FilenamePatternConfig",
     "GridConfig",
     "GridInterval",
     "ImageLayer",

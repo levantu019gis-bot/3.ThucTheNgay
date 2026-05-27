@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pydantic import ValidationError
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -28,12 +28,19 @@ from thucthengay.editor.models.composition_tree_model import (
     queue_filter_label,
 )
 from thucthengay.editor.models.layer_stack_model import LayerStackColumn, LayerStackModel
+from thucthengay.editor.render_worker import RenderWorker
 from thucthengay.editor.widgets import (
     GisCanvasWidget,
     MetadataEditorDialog,
     SlidePreviewWidget,
     WarningsPanelWidget,
     confirm_date_change_dialog,
+)
+from thucthengay.jobs import (
+    JobState,
+    PreviewRenderJobResult,
+    PreviewRenderQuality,
+    PreviewRenderRequest,
 )
 from thucthengay.models import (
     Composition,
@@ -43,6 +50,7 @@ from thucthengay.models import (
     TargetConfig,
     TemplateMetadata,
 )
+from thucthengay.render.spec import RenderSpecError, build_render_spec
 from thucthengay.validation import (
     ValidationContext,
     ValidationResult,
@@ -64,6 +72,8 @@ class ReviewEditMode(QWidget):
         self._targets: list[TargetConfig] | None = None
         self.selected_composition: Composition | None = None
         self._suppress_selection_validation = False
+        self._render_thread: QThread | None = None
+        self._render_worker: RenderWorker | None = None
 
         self.tree_model = CompositionTreeModel(self)
         self.tree_view = QTreeView()
@@ -566,6 +576,70 @@ class ReviewEditMode(QWidget):
                 return target
         return None
 
+    def _request_canvas_render(self, composition: Composition) -> None:
+        """Build a RenderSpec and submit a background render for the GIS canvas."""
+        self._cancel_render()
+        visible = [layer for layer in composition.layers if layer.visible]
+        if not visible:
+            return
+        target = self._target_for_composition(composition)
+        if target is None:
+            return
+        context = self._validation_context_for(composition)
+        if context.template_metadata is None:
+            return
+        canvas_width = max(self.gis_canvas.viewport().width(), 640)
+        canvas_height = max(self.gis_canvas.viewport().height(), 360)
+        try:
+            spec = build_render_spec(
+                composition=composition,
+                target=target,
+                template=context.template_metadata,
+                template_metadata_file=target.export.template_metadata_file,
+                output_width=canvas_width,
+                output_height=canvas_height,
+            )
+        except (RenderSpecError, ValidationError):
+            return
+        request = PreviewRenderRequest(
+            job_id=f"canvas:{composition.composition_id}",
+            composition_id=composition.composition_id,
+            revision=self.gis_canvas.generation,
+            quality=PreviewRenderQuality.SETTLED_HIGH_RES,
+            spec=spec,
+        )
+        token = self.gis_canvas.set_loading("Đang render preview...")
+        thread = QThread(self)
+        worker = RenderWorker(request)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(lambda result: self._apply_canvas_render(result, token))
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._clear_render_worker)
+        self._render_thread = thread
+        self._render_worker = worker
+        thread.start()
+
+    def _apply_canvas_render(
+        self, result: PreviewRenderJobResult, token: object
+    ) -> None:
+        if result.state in {JobState.SUCCESS, JobState.WARNING} and result.canvas is not None:
+            self.gis_canvas.apply_render_result(token, result.message, canvas=result.canvas)
+        elif result.state == JobState.ERROR:
+            self.gis_canvas.set_error(result.message)
+
+    def _cancel_render(self) -> None:
+        if self._render_thread is not None and self._render_thread.isRunning():
+            self._render_thread.quit()
+            self._render_thread.wait(2000)
+        self._render_thread = None
+        self._render_worker = None
+
+    def _clear_render_worker(self) -> None:
+        self._render_thread = None
+        self._render_worker = None
 
     def _show_review_issues(
         self,
@@ -909,6 +983,7 @@ class ReviewEditMode(QWidget):
             target_id=composition.target_id,
         )
         self._update_review_action_state()
+        self._request_canvas_render(composition)
 
     def _frame_aspect_for_composition(self, composition: Composition) -> float | None:
         for target in self._targets or []:

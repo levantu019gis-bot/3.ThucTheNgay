@@ -78,7 +78,8 @@ class IngestionSummary(BaseModel):
         warnings = [IngestionWarningItem.from_issue(issue) for issue in result.issues]
         empty_state_message = (
             NO_MATCH_EMPTY_STATE_MESSAGE
-            if result.state != JobState.ERROR and result.matched_image_count == 0
+            if result.state in {JobState.SUCCESS, JobState.WARNING}
+            and result.matched_image_count == 0
             else None
         )
         return cls(
@@ -98,7 +99,7 @@ class IngestionSummary(BaseModel):
     @property
     def hard_failure(self) -> bool:
         """Return true for jobs that failed before producing usable workspace output."""
-        return self.state == JobState.ERROR
+        return self.state in {JobState.CANCELLED, JobState.ERROR}
 
     @property
     def success_with_warnings(self) -> bool:

@@ -15,6 +15,7 @@ from thucthengay.ingestion import (
     populate_workspace_cache,
     scan_imagery_folder,
 )
+from thucthengay.jobs.control import JobCancelled, JobControl
 from thucthengay.jobs.progress import JobState, ProgressEvent
 from thucthengay.models import Issue, IssueScope, IssueSeverity, TargetConfig
 from thucthengay.workspace import WorkspaceError, WorkspaceService
@@ -43,11 +44,13 @@ def run_ingestion_job(
     workspace_service: WorkspaceService,
     clear_existing: bool = False,
     clear_confirmed: bool = False,
+    control: JobControl | None = None,
     publish: ProgressPublisher | None = None,
 ) -> IngestionJobResult:
     """Run the ingestion pipeline and emit progress after every major phase."""
     progress = _ProgressBuilder(job_id=job_id, publish=publish)
     progress.emit(stage="setup", message="Đang chuẩn bị lấy dữ liệu.")
+    checkpoint = control.checkpoint if control is not None else None
 
     fatal_issues = _fatal_setup_issues(config_result.issues)
     if fatal_issues:
@@ -59,9 +62,14 @@ def run_ingestion_job(
         )
 
     try:
+        if checkpoint is not None:
+            checkpoint()
         workspace_service.initialize(
             config_path=config_result.config_path,
             imagery_input_path=imagery_folder,
+        )
+        filename_patterns = (
+            config_result.config.filename_patterns if config_result.config else None
         )
         scan_result = scan_imagery_folder(
             imagery_folder,
@@ -73,7 +81,11 @@ def run_ingestion_job(
                     valid_image_count=valid_image_count,
                 )
             ),
+            checkpoint=checkpoint,
+            filename_patterns=filename_patterns or None,
         )
+    except JobCancelled:
+        return _finish_with_cancelled(progress, job_id=job_id)
     except (NotADirectoryError, OSError, WorkspaceError) as error:
         return _finish_with_error(
             progress,
@@ -94,29 +106,38 @@ def run_ingestion_job(
         ),
     )
 
-    matching_result = match_imagery_to_targets(
-        scan_result.rasters,
-        config_result,
-        on_target_progress=lambda processed_target_count,
-        total_target_count,
-        target,
-        target_match_count: _emit_live_target_match_progress(
-            progress,
-            processed_target_count=processed_target_count,
-            total_target_count=total_target_count,
-            target=target,
-            target_match_count=target_match_count,
-        ),
-    )
+    try:
+        if checkpoint is not None:
+            checkpoint()
+        matching_result = match_imagery_to_targets(
+            scan_result.rasters,
+            config_result,
+            on_target_progress=lambda processed_target_count,
+            total_target_count,
+            target,
+            target_match_count: _emit_live_target_match_progress(
+                progress,
+                processed_target_count=processed_target_count,
+                total_target_count=total_target_count,
+                target=target,
+                target_match_count=target_match_count,
+            ),
+            checkpoint=checkpoint,
+        )
+    except JobCancelled:
+        return _finish_with_cancelled(progress, job_id=job_id)
     issues.extend(matching_result.issues)
     _emit_target_match_progress(progress, config_result.enabled_targets, matching_result, issues)
 
     try:
+        if checkpoint is not None:
+            checkpoint()
         cache_result = populate_workspace_cache(
             matching_result,
             workspace_service,
             clear_existing=clear_existing,
             clear_confirmed=clear_confirmed,
+            checkpoint=checkpoint,
         )
         issues.extend(cache_result.issues)
         progress.update(issues=issues)
@@ -126,7 +147,10 @@ def run_ingestion_job(
             cache_result,
             _targets_by_id(config_result.enabled_targets),
             workspace_service,
+            checkpoint=checkpoint,
         )
+    except JobCancelled:
+        return _finish_with_cancelled(progress, job_id=job_id)
     except (OSError, WorkspaceError) as error:
         issues.append(_workspace_error_issue(error))
         return _finish_with_error(
@@ -262,16 +286,8 @@ def _emit_target_match_progress(
         total_target_count=total,
         issues=issues,
     )
-    if targets:
-        progress.emit(
-            stage="match",
-            current=total,
-            total=total,
-            message=(
-                f"Đã scan {total}/{total} target; "
-                f"{matched_image_count} ảnh phù hợp trên {targets_with_images_count} target."
-            ),
-        )
+    if not targets:
+        progress.emit(stage="match", current=0, total=0, message="Không có target bật.")
         return
 
     for index, target in enumerate(targets, start=1):
@@ -285,8 +301,15 @@ def _emit_target_match_progress(
             current_target_matched_count=current_matches,
         )
 
-    if not targets:
-        progress.emit(stage="match", current=0, total=0, message="Không có target bật.")
+    progress.emit(
+        stage="match",
+        current=total,
+        total=total,
+        message=(
+            f"Đã scan {total}/{total} target; "
+            f"{matched_image_count} ảnh phù hợp trên {targets_with_images_count} target."
+        ),
+    )
 
 
 def _emit_scan_progress(
@@ -331,6 +354,27 @@ def _emit_live_target_match_progress(
         message=f"Đang scan target `{target.name}`; đã lấy {target_match_count} ảnh.",
         current_target=target,
         current_target_matched_count=target_match_count,
+    )
+
+
+def _finish_with_cancelled(
+    progress: _ProgressBuilder,
+    *,
+    job_id: str,
+) -> IngestionJobResult:
+    progress.emit(
+        stage="cancelled",
+        state=JobState.CANCELLED,
+        message="Đã dừng lấy dữ liệu.",
+    )
+    return IngestionJobResult(
+        job_id=job_id,
+        state=JobState.CANCELLED,
+        issues=list(progress.issues or []),
+        scanned_image_count=progress.scanned_image_count,
+        matched_image_count=progress.matched_image_count,
+        targets_with_images_count=progress.targets_with_images_count,
+        composition_ids=[],
     )
 
 
