@@ -63,7 +63,17 @@ def run_ingestion_job(
             config_path=config_result.config_path,
             imagery_input_path=imagery_folder,
         )
-        scan_result = scan_imagery_folder(imagery_folder)
+        scan_result = scan_imagery_folder(
+            imagery_folder,
+            on_progress=lambda scanned_file_count, total_image_count, valid_image_count: (
+                _emit_scan_progress(
+                    progress,
+                    scanned_file_count=scanned_file_count,
+                    total_image_count=total_image_count,
+                    valid_image_count=valid_image_count,
+                )
+            ),
+        )
     except (NotADirectoryError, OSError, WorkspaceError) as error:
         return _finish_with_error(
             progress,
@@ -76,12 +86,28 @@ def run_ingestion_job(
     progress.update(scanned_image_count=len(scan_result.rasters), issues=issues)
     progress.emit(
         stage="scan",
-        current=len(scan_result.rasters),
-        total=len(scan_result.rasters),
-        message=f"Đã quét {len(scan_result.rasters)} ảnh GeoTIFF hợp lệ.",
+        current=progress.scanned_file_count,
+        total=progress.total_image_count,
+        message=(
+            f"Đã scan {progress.scanned_file_count}/{progress.total_image_count} ảnh; "
+            f"{len(scan_result.rasters)} ảnh GeoTIFF hợp lệ."
+        ),
     )
 
-    matching_result = match_imagery_to_targets(scan_result.rasters, config_result)
+    matching_result = match_imagery_to_targets(
+        scan_result.rasters,
+        config_result,
+        on_target_progress=lambda processed_target_count,
+        total_target_count,
+        target,
+        target_match_count: _emit_live_target_match_progress(
+            progress,
+            processed_target_count=processed_target_count,
+            total_target_count=total_target_count,
+            target=target,
+            target_match_count=target_match_count,
+        ),
+    )
     issues.extend(matching_result.issues)
     _emit_target_match_progress(progress, config_result.enabled_targets, matching_result, issues)
 
@@ -140,6 +166,10 @@ class _ProgressBuilder:
     scanned_image_count: int = 0
     matched_image_count: int = 0
     targets_with_images_count: int = 0
+    scanned_file_count: int = 0
+    total_image_count: int = 0
+    processed_target_count: int = 0
+    total_target_count: int = 0
     warning_count: int = 0
     issues: list[Issue] | None = None
     created_composition_count: int = 0
@@ -148,17 +178,29 @@ class _ProgressBuilder:
         self,
         *,
         scanned_image_count: int | None = None,
+        scanned_file_count: int | None = None,
+        total_image_count: int | None = None,
         matched_image_count: int | None = None,
         targets_with_images_count: int | None = None,
+        processed_target_count: int | None = None,
+        total_target_count: int | None = None,
         issues: list[Issue] | None = None,
         created_composition_count: int | None = None,
     ) -> None:
         if scanned_image_count is not None:
             self.scanned_image_count = scanned_image_count
+        if scanned_file_count is not None:
+            self.scanned_file_count = scanned_file_count
+        if total_image_count is not None:
+            self.total_image_count = total_image_count
         if matched_image_count is not None:
             self.matched_image_count = matched_image_count
         if targets_with_images_count is not None:
             self.targets_with_images_count = targets_with_images_count
+        if processed_target_count is not None:
+            self.processed_target_count = processed_target_count
+        if total_target_count is not None:
+            self.total_target_count = total_target_count
         if issues is not None:
             self.issues = list(issues)
             self.warning_count = len(issues)
@@ -185,8 +227,12 @@ class _ProgressBuilder:
             message=message,
             issues=list(self.issues or []),
             scanned_image_count=self.scanned_image_count,
+            scanned_file_count=self.scanned_file_count,
+            total_image_count=self.total_image_count,
             matched_image_count=self.matched_image_count,
             targets_with_images_count=self.targets_with_images_count,
+            processed_target_count=self.processed_target_count,
+            total_target_count=self.total_target_count,
             warning_count=self.warning_count,
             current_target_id=current_target.id if current_target else None,
             current_target_name=current_target.name if current_target else None,
@@ -208,13 +254,26 @@ def _emit_target_match_progress(
     targets_with_images_count = sum(
         1 for matches in matching_result.matches.values() if matches
     )
+    total = len(targets)
     progress.update(
         matched_image_count=matched_image_count,
         targets_with_images_count=targets_with_images_count,
+        processed_target_count=total if targets else 0,
+        total_target_count=total,
         issues=issues,
     )
+    if targets:
+        progress.emit(
+            stage="match",
+            current=total,
+            total=total,
+            message=(
+                f"Đã scan {total}/{total} target; "
+                f"{matched_image_count} ảnh phù hợp trên {targets_with_images_count} target."
+            ),
+        )
+        return
 
-    total = len(targets)
     for index, target in enumerate(targets, start=1):
         current_matches = len(matching_result.matches.get(target.id, []))
         progress.emit(
@@ -228,6 +287,51 @@ def _emit_target_match_progress(
 
     if not targets:
         progress.emit(stage="match", current=0, total=0, message="Không có target bật.")
+
+
+def _emit_scan_progress(
+    progress: _ProgressBuilder,
+    *,
+    scanned_file_count: int,
+    total_image_count: int,
+    valid_image_count: int,
+) -> None:
+    progress.update(
+        scanned_file_count=scanned_file_count,
+        total_image_count=total_image_count,
+        scanned_image_count=valid_image_count,
+    )
+    progress.emit(
+        stage="scan",
+        current=scanned_file_count,
+        total=total_image_count,
+        message=(
+            f"Đang scan ảnh {scanned_file_count}/{total_image_count}; "
+            f"đã nhận {valid_image_count} ảnh GeoTIFF hợp lệ."
+        ),
+    )
+
+
+def _emit_live_target_match_progress(
+    progress: _ProgressBuilder,
+    *,
+    processed_target_count: int,
+    total_target_count: int,
+    target: TargetConfig,
+    target_match_count: int,
+) -> None:
+    progress.update(
+        processed_target_count=processed_target_count,
+        total_target_count=total_target_count,
+    )
+    progress.emit(
+        stage="match",
+        current=processed_target_count,
+        total=total_target_count,
+        message=f"Đang scan target `{target.name}`; đã lấy {target_match_count} ảnh.",
+        current_target=target,
+        current_target_matched_count=target_match_count,
+    )
 
 
 def _finish_with_error(

@@ -63,6 +63,7 @@ class CompositionArtifacts(BaseModel):
 
     preview_render_path: str | None = None
     final_render_path: str | None = None
+    render_log_path: str | None = None
     export_log_path: str | None = None
 
 

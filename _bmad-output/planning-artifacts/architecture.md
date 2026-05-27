@@ -40,7 +40,7 @@ PRD có 23 functional requirements, nhóm thành 6 vùng kiến trúc chính:
 3. **Workspace & Composition State** — quản lý manifest, cache, composition JSON, status, review_order, validation_summary.
 4. **Review/Edit UI** — PySide6 desktop UI với tree, layers, slide preview, GIS editor, keyboard review loop.
 5. **Rendering & Validation** — render preview/final từ composition state, validate layer/metadata/grid/template/render readiness, issue schema.
-6. **Export** — target-specific template metadata, render PNG final, copy slide template, replace placeholders, export PPTX/TXT/log.
+6. **Export** — target-specific one-slide PPTX template, render PNG final, copy slide template, replace placeholders by PPTX element id, export PPTX/TXT/log.
 
 **Non-Functional Requirements:**
 
@@ -66,7 +66,7 @@ PRD có 23 functional requirements, nhóm thành 6 vùng kiến trúc chính:
 - PPTX export: python-pptx plus controlled XML/media handling if needed.
 - State/config: JSON files.
 - Workspace is source of truth.
-- Template analyzer is out of scope for main app; app consumes template metadata generated separately.
+- Template analyzer metadata JSON is out of scope for MVP export; app consumes one-slide PPTX templates and element-id mappings declared in target config.
 - Target templates may be separate PPTX files, but must share compatible base/theme/master for MVP.
 - UX requires desktop-first adaptive splitter layout, keyboard review actions, warning navigation, and dense Qt-native components.
 
@@ -78,7 +78,7 @@ PRD có 23 functional requirements, nhóm thành 6 vùng kiến trúc chính:
 - **CRS and spatial correctness:** intersection, center/scale-derived map window, grid labels, raster transform and final render must be consistent.
 - **Render parity:** preview and final render must share core math while using different performance paths.
 - **Issue propagation:** issue schema must support tree indicators, Warnings panel, validation gates and export logs.
-- **Template/export reliability:** template metadata, placeholders, slide copy, PNG insertion and TXT templating need strict validation.
+- **Template/export reliability:** PPTX template path, element-id mappings, slide copy, PNG insertion and TXT templating need strict validation.
 - **Keyboard and focus handling:** review shortcuts must not conflict with metadata/grid text inputs.
 
 ## Starter Template Evaluation
@@ -213,11 +213,11 @@ tests/
 - Python desktop app with PySide6 Qt Widgets.
 - Layered package architecture.
 - Workspace JSON as source of truth.
-- Pydantic-based schema validation for config/composition/template metadata.
+- Pydantic-based schema validation for config/composition/export template mapping.
 - Service-oriented core modules testable without UI.
 - Background job model for ingestion/render/export.
 - Hybrid renderer with shared core math and separate preview/final paths.
-- Target-specific template metadata and PPTX export validation.
+- Target-specific one-slide PPTX template and element-id replacement validation.
 
 **Important Decisions (Shape Architecture):**
 
@@ -260,12 +260,12 @@ workspace/
 
 **Validation Strategy:**
 
-- Config validation must require target `coordinate` `[lon, lat]`, positive scale denominator, valid grid interval, GeoJSON path, and template metadata path for enabled targets.
+- Config validation must require target `coordinate` `[lon, lat]`, positive scale denominator, valid grid interval, GeoJSON path, and template PPTX path for enabled targets.
 - Use Pydantic models for:
   - project/target config;
   - composition JSON;
   - layer metadata;
-  - template metadata;
+- target PPTX template and element-id mapping;
   - issue schema;
   - export log.
 - Use structured load/save service; UI should not parse/write JSON directly.
@@ -295,7 +295,7 @@ workspace/
 **Security Guardrails:**
 
 - Treat file paths as untrusted input.
-- Avoid arbitrary code execution from config/template metadata.
+- Avoid arbitrary code execution from config/PPTX template mapping.
 - Resolve relative paths against config/workspace roots.
 - Confirm destructive operations:
   - clear workspace;
@@ -370,7 +370,7 @@ AppShell / QMainWindow
 **Core Render Math:**
 
 - Shared by preview and final.
-- Inputs: composition, target config, template metadata/map frame, output size.
+- Inputs: composition, target config, PPTX map-frame bounds, output size.
 - Uses `view.center`, `view.scale`, visible layers, layer order, grid interval, label format, background RGB.
 
 **Preview Path:**
@@ -405,29 +405,29 @@ AppShell / QMainWindow
 
 ### Export Architecture
 
-**Decision:** Target-specific template metadata, one combined PPTX output.
+**Decision:** Target-specific one-slide PPTX templates, one combined PPTX output.
 
 **Flow:**
 
 1. Load included compositions sorted by review_order.
 2. Full preflight validation.
 3. Render final PNG per composition.
-4. Load target template metadata.
-5. Copy sample slide from target-specific PPTX.
-6. Replace map frame image and text placeholders.
+4. Load target-specific one-slide PPTX template and element-id mapping from target config.
+5. Copy the only slide from target-specific PPTX.
+6. Replace map frame image and text placeholders by configured PPTX element ids.
 7. Write combined PPTX.
 8. Write TXT.
 9. Write export log JSON/TXT.
 
 **Template Rule:**
 
-- Shape lookup uses `name` primary, `fallback_id` optional.
+- Shape lookup uses configured PPTX element id as the authoritative key; shape names are diagnostic only.
 - Required placeholders missing = blocking error.
 - MVP requires all target PPTX templates share compatible base/theme/master.
 
 **Implementation Note:**
 
-- Start with one-slide export vertical slice.
+- Start with one-slide export vertical slice; reject target templates with zero or multiple slides.
 - If python-pptx slide copying is insufficient, isolate XML/media copy logic inside `export/pptx_slide_copy.py` so risk is contained.
 
 ### Infrastructure & Deployment
@@ -455,17 +455,17 @@ AppShell / QMainWindow
 3. Implement workspace service and atomic JSON writes.
 4. Implement ingestion minimal.
 5. Implement GIS utility functions and render final PNG.
-6. Implement template metadata and one-slide PPTX/TXT export.
+6. Implement target PPTX mapping and one-slide PPTX/TXT export.
 7. Build PySide6 shell and Review/Edit vertical slice.
 8. Add validation/warnings and preview cache.
 9. Harden export, progress jobs and logs.
 
 **Cross-Component Dependencies:**
 
-- `validation` depends on config/workspace/gis/template metadata but should not depend on UI.
+- `validation` depends on config/workspace/gis/target PPTX mapping but should not depend on UI.
 - `render` depends on gis/workspace models but should not depend on UI widgets.
 - `editor` depends on workspace/render/validation services through application interfaces.
-- `export` depends on validation/render/template metadata and workspace.
+- `export` depends on validation/render/target PPTX mapping and workspace.
 - `ingestion` creates workspace artifacts consumed by editor/render/export.
 
 ## Implementation Patterns & Consistency Rules
@@ -828,12 +828,10 @@ Rules:
 
 - `config.json` is the primary project config selected in Setup.
 - `targets/*.geojson` are source target boundaries referenced by `config.json` through `geojson_file`.
-- `templates/*.template.json` are target-specific PowerPoint template metadata files referenced by `target.export.template_metadata_file`.
-- `templates/*.pptx` are target-specific PowerPoint templates referenced by their adjacent template metadata files.
+- `templates/*.pptx` are target-specific one-slide PowerPoint templates referenced directly by `target.export.template_pptx_file`.
 - `imagery/` contains source GeoTIFFs and should be scan/read-only for the app.
 - `workspace/` is runtime state owned by the app and may be cleared on `Lấy dữ liệu` after confirmation.
 - Paths inside `config.json` resolve relative to the config file location.
-- Paths inside a template metadata file resolve relative to the template metadata file location.
 - Workspace JSON should store workspace-relative paths where possible.
 
 ### Architectural Boundaries
@@ -950,7 +948,7 @@ Rules:
 - GeoTIFF via rasterio/GDAL.
 - GeoJSON via shapely/json parser.
 - PPTX via python-pptx.
-- Template metadata JSON.
+- Target one-slide PPTX templates and element-id mappings in config.
 
 **Data Flow**
 
@@ -1015,10 +1013,10 @@ Các quyết định chính tương thích với nhau:
 - PySide6 Qt Widgets phù hợp desktop UX spec.
 - Custom Python package scaffold phù hợp app local không backend.
 - File-based workspace JSON phù hợp yêu cầu inspect/recover.
-- Pydantic schemas phù hợp JSON config/workspace/template metadata.
+- Pydantic schemas phù hợp JSON config/workspace/export template mapping.
 - Service-oriented core modules giúp test headless và giữ UI không sở hữu business logic.
 - Hybrid renderer phù hợp yêu cầu preview nhanh nhưng final chính xác.
-- Target-specific template metadata phù hợp PRD đã chốt mỗi target có template riêng.
+- Target-specific one-slide PPTX templates phù hợp PRD đã chốt mỗi target có template riêng.
 
 **Pattern Consistency:**
 
@@ -1049,7 +1047,7 @@ Project structure hỗ trợ đầy đủ module boundaries:
 - FR-9 to FR-14 covered by `editor/` models/widgets/modes.
 - FR-15 to FR-16 covered by `render/` + `gis/` + `jobs/render_job.py`.
 - FR-17 to FR-19 covered by `validation/` + `models/issue.py` + warnings UI.
-- FR-20 to FR-23 covered by `export/` + final render + template metadata.
+- FR-20 to FR-23 covered by `export/` + final render + target PPTX template/element-id mapping.
 
 **Non-Functional Requirements Coverage:**
 
@@ -1081,8 +1079,8 @@ Naming, JSON format, service boundaries, issue handling, job progress, state tra
 **Important Gaps:**
 
 - Exact dependency version pins should be finalized when `pyproject.toml` is created.
-- Exact template metadata JSON schema still needs to be written as implementation artifact.
-- Exact render output DPI/pixel rules depend on sample template metadata.
+- Exact target export mapping schema for PPTX element ids still needs to be written as implementation artifact.
+- Exact render output DPI/pixel rules depend on the map-frame element bounds in sample PPTX templates.
 
 **Nice-to-Have Gaps:**
 

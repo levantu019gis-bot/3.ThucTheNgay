@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from thucthengay.models.template import TemplatePlaceholder
 
 
 class GridInterval(BaseModel):
@@ -39,8 +41,16 @@ class TargetExportConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    template_metadata_file: str
+    template_pptx_file: str = Field(
+        validation_alias=AliasChoices("template_pptx_file", "template_metadata_file")
+    )
+    placeholders: list[TemplatePlaceholder] = Field(default_factory=list)
     txt_line_template: str | None = None
+
+    @property
+    def template_metadata_file(self) -> str:
+        """Backward-compatible access during the Epic 6 migration."""
+        return self.template_pptx_file
 
 
 class TargetConfig(BaseModel):

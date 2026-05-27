@@ -1,5 +1,5 @@
 # generated: 2026-05-24
-# last_updated: 2026-05-26  # 5-1 and 5-2 code review complete
+# last_updated: 2026-05-26  # epic 6 done
 # project: 3.ThucTheNgay
 # project_key: NOKEY
 # tracking_system: file-system
@@ -76,19 +76,19 @@ development_status:
   4-5-implement-metadata-editor-for-capture-date-time-correction: done
   4-6-confirm-cache-move-when-corrected-date-changes: done
   epic-4-retrospective: optional
-  epic-5: in-progress
+  epic-5: done
   5-1-build-shared-render-specification-from-composition-state: done
   5-2-implement-raster-window-and-crs-transform-rendering-core: done
-  5-3-render-grid-and-map-background-without-mvp-extras: backlog
-  5-4-implement-two-stage-preview-rendering-jobs: backlog
-  5-5-implement-final-png-rendering-and-render-log: backlog
-  5-6-verify-preview-final-alignment-with-fixtures: backlog
+  5-3-render-grid-and-map-background-without-mvp-extras: done
+  5-4-implement-two-stage-preview-rendering-jobs: done
+  5-5-implement-final-png-rendering-and-render-log: done
+  5-6-verify-preview-final-alignment-with-fixtures: done
   epic-5-retrospective: optional
-  epic-6: backlog
-  6-1-load-target-specific-powerpoint-template-metadata: backlog
-  6-2-build-export-preflight-and-export-plan-ui: backlog
-  6-3-generate-final-renders-for-included-compositions: backlog
-  6-4-export-combined-pptx-from-target-specific-sample-slides: backlog
-  6-5-export-txt-report-lines: backlog
-  6-6-write-export-summary-and-trace-log: backlog
+  epic-6: done
+  6-1-load-target-specific-powerpoint-template-metadata: done
+  6-2-build-export-preflight-and-export-plan-ui: done
+  6-3-generate-final-renders-for-included-compositions: done
+  6-4-export-combined-pptx-from-target-specific-sample-slides: done
+  6-5-export-txt-report-lines: done
+  6-6-write-export-summary-and-trace-log: done
   epic-6-retrospective: optional

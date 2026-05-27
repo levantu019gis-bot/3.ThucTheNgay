@@ -1,0 +1,1157 @@
+{
+  "template_pptx": "target_001.template.pptx",
+  "slide_index": 0,
+  "map_frame": {
+    "x": 0.0024,
+    "y": 0.0155,
+    "width": 16.5223,
+    "height": 11.6946
+  },
+  "placeholders": [
+    {
+      "field": "map_image",
+      "element_id": 1026,
+      "kind": "map_image",
+      "diagnostic_name": "Picture 2",
+      "required": true
+    },
+    {
+      "field": "text_7",
+      "element_id": 7,
+      "kind": "text",
+      "diagnostic_name": "TextBox 6",
+      "required": false
+    },
+    {
+      "field": "text_14",
+      "element_id": 14,
+      "kind": "text",
+      "diagnostic_name": "Rectangle 13",
+      "required": false
+    },
+    {
+      "field": "text_2",
+      "element_id": 2,
+      "kind": "text",
+      "diagnostic_name": "TextBox 1",
+      "required": false
+    },
+    {
+      "field": "text_8",
+      "element_id": 8,
+      "kind": "text",
+      "diagnostic_name": "TextBox 7",
+      "required": false
+    },
+    {
+      "field": "text_10",
+      "element_id": 10,
+      "kind": "text",
+      "diagnostic_name": "TextBox 9",
+      "required": false
+    }
+  ],
+  "metadata": {
+    "generator": {
+      "name": "generate_template_metadata.py",
+      "schema": "pptx-template-inspection-v1"
+    },
+    "source": {
+      "pptx": "target_001.template.pptx",
+      "absolute_pptx": "D:\\TU_KXOA\\5.TTN\\gis_ttn\\examples\\templates\\target_001.template.pptx"
+    },
+    "presentation": {
+      "slide_count": 1,
+      "slide_width_emu": 15114588,
+      "slide_height_emu": 10688638,
+      "slide_width_inches": 16.5295,
+      "slide_height_inches": 11.6892
+    },
+    "selected_slide": {
+      "slide_index": 0,
+      "slide_number": 1,
+      "shape_count": 7,
+      "relationship_targets": {
+        "rId3": "../media/image2.emf",
+        "rId2": "../media/image1.jpg",
+        "rId1": "../slideLayouts/slideLayout2.xml"
+      },
+      "shapes": [
+        {
+          "id": "1026",
+          "name": "Picture 2",
+          "shape_type": "PICTURE (13)",
+          "shape_type_name": "PICTURE",
+          "rotation": 0.0,
+          "bbox": {
+            "emu": {
+              "x": 2207,
+              "y": 14129,
+              "width": 15108007,
+              "height": 10693508
+            },
+            "inches": {
+              "x": 0.0024,
+              "y": 0.0155,
+              "width": 16.5223,
+              "height": 11.6946
+            },
+            "normalized": {
+              "x": 0.000146,
+              "y": 0.001322,
+              "width": 0.999565,
+              "height": 1.000456
+            }
+          },
+          "placeholder": null,
+          "text": {
+            "has_text_frame": false,
+            "text": "",
+            "paragraphs": []
+          },
+          "fill": null,
+          "line": {
+            "width": "0",
+            "dash_style": null,
+            "color": {}
+          },
+          "picture": {
+            "relationship_id": "rId2",
+            "relationship_target": "../media/image1.jpg",
+            "crop": {
+              "crop_left": 0.0,
+              "crop_right": 0.0,
+              "crop_top": 0.0,
+              "crop_bottom": 0.0
+            },
+            "media": {
+              "relationship_target": "../media/image1.jpg",
+              "resolved_path": "ppt/media/image1.jpg",
+              "found": true,
+              "bytes": 270775,
+              "image": {
+                "format": "JPEG",
+                "width_px": 3306,
+                "height_px": 2340,
+                "mode": "RGB"
+              }
+            }
+          }
+        },
+        {
+          "id": "7",
+          "name": "TextBox 6",
+          "shape_type": "TEXT_BOX (17)",
+          "shape_type_name": "TEXT_BOX",
+          "rotation": 0.0,
+          "bbox": {
+            "emu": {
+              "x": 1111372,
+              "y": 243570,
+              "width": 13837322,
+              "height": 448473
+            },
+            "inches": {
+              "x": 1.2154,
+              "y": 0.2664,
+              "width": 15.1327,
+              "height": 0.4905
+            },
+            "normalized": {
+              "x": 0.07353,
+              "y": 0.022788,
+              "width": 0.915494,
+              "height": 0.041958
+            }
+          },
+          "placeholder": null,
+          "text": {
+            "has_text_frame": true,
+            "text": "NAME, TIME",
+            "word_wrap": true,
+            "auto_size": "SHAPE_TO_FIT_TEXT",
+            "vertical_anchor": null,
+            "margins": {
+              "margin_left": 169815,
+              "margin_right": 169815,
+              "margin_top": 84908,
+              "margin_bottom": 84908
+            },
+            "paragraphs": [
+              {
+                "text": "NAME, TIME",
+                "alignment": null,
+                "level": 0,
+                "runs": [
+                  {
+                    "text": "NAME",
+                    "font": {
+                      "name": null,
+                      "size": null,
+                      "bold": null,
+                      "italic": null,
+                      "underline": null,
+                      "color": {}
+                    }
+                  },
+                  {
+                    "text": ", ",
+                    "font": {
+                      "name": null,
+                      "size": null,
+                      "bold": null,
+                      "italic": null,
+                      "underline": null,
+                      "color": {}
+                    }
+                  },
+                  {
+                    "text": "TIME",
+                    "font": {
+                      "name": null,
+                      "size": null,
+                      "bold": null,
+                      "italic": null,
+                      "underline": null,
+                      "color": {}
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "fill": {
+            "type": "GRADIENT"
+          },
+          "line": {
+            "width": "0",
+            "dash_style": null,
+            "color": {}
+          },
+          "picture": null
+        },
+        {
+          "id": "14",
+          "name": "Rectangle 13",
+          "shape_type": "AUTO_SHAPE (1)",
+          "shape_type_name": "AUTO_SHAPE",
+          "rotation": 0.0,
+          "bbox": {
+            "emu": {
+              "x": 7753358,
+              "y": 1074142,
+              "width": 553357,
+              "height": 307777
+            },
+            "inches": {
+              "x": 8.4792,
+              "y": 1.1747,
+              "width": 0.6052,
+              "height": 0.3366
+            },
+            "normalized": {
+              "x": 0.512972,
+              "y": 0.100494,
+              "width": 0.036611,
+              "height": 0.028795
+            }
+          },
+          "placeholder": null,
+          "text": {
+            "has_text_frame": true,
+            "text": "time",
+            "word_wrap": false,
+            "auto_size": "SHAPE_TO_FIT_TEXT",
+            "vertical_anchor": null,
+            "margins": {
+              "margin_left": 91440,
+              "margin_right": 91440,
+              "margin_top": 45720,
+              "margin_bottom": 45720
+            },
+            "paragraphs": [
+              {
+                "text": "time",
+                "alignment": "CENTER",
+                "level": 0,
+                "runs": [
+                  {
+                    "text": "time",
+                    "font": {
+                      "name": "Arial",
+                      "size": 177800,
+                      "bold": true,
+                      "italic": null,
+                      "underline": null,
+                      "color": {
+                        "rgb": "FFFF00",
+                        "theme_color": "NOT_THEME_COLOR",
+                        "brightness": 0
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "fill": {
+            "type": "SOLID",
+            "fore_color": {
+              "theme_color": "ACCENT_1",
+              "brightness": 0
+            }
+          },
+          "line": {
+            "width": "0",
+            "dash_style": null,
+            "color": {}
+          },
+          "picture": null
+        },
+        {
+          "id": "2",
+          "name": "TextBox 1",
+          "shape_type": "TEXT_BOX (17)",
+          "shape_type_name": "TEXT_BOX",
+          "rotation": 0.0,
+          "bbox": {
+            "emu": {
+              "x": 5591242,
+              "y": 9983187,
+              "width": 5334000,
+              "height": 307777
+            },
+            "inches": {
+              "x": 6.1147,
+              "y": 10.9177,
+              "width": 5.8333,
+              "height": 0.3366
+            },
+            "normalized": {
+              "x": 0.369924,
+              "y": 0.934,
+              "width": 0.352904,
+              "height": 0.028795
+            }
+          },
+          "placeholder": null,
+          "text": {
+            "has_text_frame": true,
+            "text": "comment",
+            "word_wrap": true,
+            "auto_size": "SHAPE_TO_FIT_TEXT",
+            "vertical_anchor": null,
+            "margins": {
+              "margin_left": 91440,
+              "margin_right": 91440,
+              "margin_top": 45720,
+              "margin_bottom": 45720
+            },
+            "paragraphs": [
+              {
+                "text": "comment",
+                "alignment": "CENTER",
+                "level": 0,
+                "runs": [
+                  {
+                    "text": "c",
+                    "font": {
+                      "name": "Arial",
+                      "size": 177800,
+                      "bold": true,
+                      "italic": null,
+                      "underline": null,
+                      "color": {
+                        "rgb": "FFFF00",
+                        "theme_color": "NOT_THEME_COLOR",
+                        "brightness": 0
+                      }
+                    }
+                  },
+                  {
+                    "text": "omment",
+                    "font": {
+                      "name": "Arial",
+                      "size": 177800,
+                      "bold": true,
+                      "italic": null,
+                      "underline": null,
+                      "color": {
+                        "rgb": "FFFF00",
+                        "theme_color": "NOT_THEME_COLOR",
+                        "brightness": 0
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "fill": {
+            "type": "SOLID",
+            "fore_color": {
+              "theme_color": "ACCENT_1",
+              "brightness": 0
+            }
+          },
+          "line": {
+            "width": "0",
+            "dash_style": null,
+            "color": {}
+          },
+          "picture": null
+        },
+        {
+          "id": "9",
+          "name": "Picture 8",
+          "shape_type": "PICTURE (13)",
+          "shape_type_name": "PICTURE",
+          "rotation": 0.0,
+          "bbox": {
+            "emu": {
+              "x": 14242111,
+              "y": 1059061,
+              "width": 296883,
+              "height": 694252
+            },
+            "inches": {
+              "x": 15.5754,
+              "y": 1.1582,
+              "width": 0.3247,
+              "height": 0.7592
+            },
+            "normalized": {
+              "x": 0.942276,
+              "y": 0.099083,
+              "width": 0.019642,
+              "height": 0.064952
+            }
+          },
+          "placeholder": null,
+          "text": {
+            "has_text_frame": false,
+            "text": "",
+            "paragraphs": []
+          },
+          "fill": null,
+          "line": {
+            "width": "0",
+            "dash_style": null,
+            "color": {}
+          },
+          "picture": {
+            "relationship_id": "rId3",
+            "relationship_target": "../media/image2.emf",
+            "crop": {
+              "crop_left": 0.0,
+              "crop_right": 0.0,
+              "crop_top": 0.0,
+              "crop_bottom": 0.0
+            },
+            "media": {
+              "relationship_target": "../media/image2.emf",
+              "resolved_path": "ppt/media/image2.emf",
+              "found": true,
+              "bytes": 1248,
+              "image": {
+                "format": "WMF",
+                "width_px": 31,
+                "height_px": 74,
+                "mode": "RGB"
+              }
+            }
+          }
+        },
+        {
+          "id": "8",
+          "name": "TextBox 7",
+          "shape_type": "TEXT_BOX (17)",
+          "shape_type_name": "TEXT_BOX",
+          "rotation": 0.0,
+          "bbox": {
+            "emu": {
+              "x": 5423694,
+              "y": 6868319,
+              "width": 1479227,
+              "height": 448474
+            },
+            "inches": {
+              "x": 5.9314,
+              "y": 7.5113,
+              "width": 1.6177,
+              "height": 0.4905
+            },
+            "normalized": {
+              "x": 0.358838,
+              "y": 0.642581,
+              "width": 0.097868,
+              "height": 0.041958
+            }
+          },
+          "placeholder": null,
+          "text": {
+            "has_text_frame": true,
+            "text": "ABC",
+            "word_wrap": false,
+            "auto_size": null,
+            "vertical_anchor": "MIDDLE",
+            "margins": {
+              "margin_left": 79352,
+              "margin_right": 79352,
+              "margin_top": 39676,
+              "margin_bottom": 39676
+            },
+            "paragraphs": [
+              {
+                "text": "ABC",
+                "alignment": null,
+                "level": 0,
+                "runs": [
+                  {
+                    "text": "ABC",
+                    "font": {
+                      "name": "Arial",
+                      "size": 177800,
+                      "bold": null,
+                      "italic": null,
+                      "underline": null,
+                      "color": {}
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "fill": {
+            "type": "BACKGROUND"
+          },
+          "line": {
+            "width": "0",
+            "dash_style": null,
+            "color": {}
+          },
+          "picture": null
+        },
+        {
+          "id": "10",
+          "name": "TextBox 9",
+          "shape_type": "TEXT_BOX (17)",
+          "shape_type_name": "TEXT_BOX",
+          "rotation": 0.0,
+          "bbox": {
+            "emu": {
+              "x": 6538900,
+              "y": 7977279,
+              "width": 1479227,
+              "height": 448474
+            },
+            "inches": {
+              "x": 7.151,
+              "y": 8.7241,
+              "width": 1.6177,
+              "height": 0.4905
+            },
+            "normalized": {
+              "x": 0.432622,
+              "y": 0.746333,
+              "width": 0.097868,
+              "height": 0.041958
+            }
+          },
+          "placeholder": null,
+          "text": {
+            "has_text_frame": true,
+            "text": "XYZ",
+            "word_wrap": false,
+            "auto_size": null,
+            "vertical_anchor": "MIDDLE",
+            "margins": {
+              "margin_left": 79352,
+              "margin_right": 79352,
+              "margin_top": 39676,
+              "margin_bottom": 39676
+            },
+            "paragraphs": [
+              {
+                "text": "XYZ",
+                "alignment": null,
+                "level": 0,
+                "runs": [
+                  {
+                    "text": "XYZ",
+                    "font": {
+                      "name": "Arial",
+                      "size": 177800,
+                      "bold": null,
+                      "italic": null,
+                      "underline": null,
+                      "color": {}
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "fill": {
+            "type": "BACKGROUND"
+          },
+          "line": {
+            "width": "0",
+            "dash_style": null,
+            "color": {}
+          },
+          "picture": null
+        }
+      ]
+    },
+    "slides": [
+      {
+        "slide_index": 0,
+        "slide_number": 1,
+        "shape_count": 7,
+        "relationship_targets": {
+          "rId3": "../media/image2.emf",
+          "rId2": "../media/image1.jpg",
+          "rId1": "../slideLayouts/slideLayout2.xml"
+        },
+        "shapes": [
+          {
+            "id": "1026",
+            "name": "Picture 2",
+            "shape_type": "PICTURE (13)",
+            "shape_type_name": "PICTURE",
+            "rotation": 0.0,
+            "bbox": {
+              "emu": {
+                "x": 2207,
+                "y": 14129,
+                "width": 15108007,
+                "height": 10693508
+              },
+              "inches": {
+                "x": 0.0024,
+                "y": 0.0155,
+                "width": 16.5223,
+                "height": 11.6946
+              },
+              "normalized": {
+                "x": 0.000146,
+                "y": 0.001322,
+                "width": 0.999565,
+                "height": 1.000456
+              }
+            },
+            "placeholder": null,
+            "text": {
+              "has_text_frame": false,
+              "text": "",
+              "paragraphs": []
+            },
+            "fill": null,
+            "line": {
+              "width": "0",
+              "dash_style": null,
+              "color": {}
+            },
+            "picture": {
+              "relationship_id": "rId2",
+              "relationship_target": "../media/image1.jpg",
+              "crop": {
+                "crop_left": 0.0,
+                "crop_right": 0.0,
+                "crop_top": 0.0,
+                "crop_bottom": 0.0
+              },
+              "media": {
+                "relationship_target": "../media/image1.jpg",
+                "resolved_path": "ppt/media/image1.jpg",
+                "found": true,
+                "bytes": 270775,
+                "image": {
+                  "format": "JPEG",
+                  "width_px": 3306,
+                  "height_px": 2340,
+                  "mode": "RGB"
+                }
+              }
+            }
+          },
+          {
+            "id": "7",
+            "name": "TextBox 6",
+            "shape_type": "TEXT_BOX (17)",
+            "shape_type_name": "TEXT_BOX",
+            "rotation": 0.0,
+            "bbox": {
+              "emu": {
+                "x": 1111372,
+                "y": 243570,
+                "width": 13837322,
+                "height": 448473
+              },
+              "inches": {
+                "x": 1.2154,
+                "y": 0.2664,
+                "width": 15.1327,
+                "height": 0.4905
+              },
+              "normalized": {
+                "x": 0.07353,
+                "y": 0.022788,
+                "width": 0.915494,
+                "height": 0.041958
+              }
+            },
+            "placeholder": null,
+            "text": {
+              "has_text_frame": true,
+              "text": "NAME, TIME",
+              "word_wrap": true,
+              "auto_size": "SHAPE_TO_FIT_TEXT",
+              "vertical_anchor": null,
+              "margins": {
+                "margin_left": 169815,
+                "margin_right": 169815,
+                "margin_top": 84908,
+                "margin_bottom": 84908
+              },
+              "paragraphs": [
+                {
+                  "text": "NAME, TIME",
+                  "alignment": null,
+                  "level": 0,
+                  "runs": [
+                    {
+                      "text": "NAME",
+                      "font": {
+                        "name": null,
+                        "size": null,
+                        "bold": null,
+                        "italic": null,
+                        "underline": null,
+                        "color": {}
+                      }
+                    },
+                    {
+                      "text": ", ",
+                      "font": {
+                        "name": null,
+                        "size": null,
+                        "bold": null,
+                        "italic": null,
+                        "underline": null,
+                        "color": {}
+                      }
+                    },
+                    {
+                      "text": "TIME",
+                      "font": {
+                        "name": null,
+                        "size": null,
+                        "bold": null,
+                        "italic": null,
+                        "underline": null,
+                        "color": {}
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "fill": {
+              "type": "GRADIENT"
+            },
+            "line": {
+              "width": "0",
+              "dash_style": null,
+              "color": {}
+            },
+            "picture": null
+          },
+          {
+            "id": "14",
+            "name": "Rectangle 13",
+            "shape_type": "AUTO_SHAPE (1)",
+            "shape_type_name": "AUTO_SHAPE",
+            "rotation": 0.0,
+            "bbox": {
+              "emu": {
+                "x": 7753358,
+                "y": 1074142,
+                "width": 553357,
+                "height": 307777
+              },
+              "inches": {
+                "x": 8.4792,
+                "y": 1.1747,
+                "width": 0.6052,
+                "height": 0.3366
+              },
+              "normalized": {
+                "x": 0.512972,
+                "y": 0.100494,
+                "width": 0.036611,
+                "height": 0.028795
+              }
+            },
+            "placeholder": null,
+            "text": {
+              "has_text_frame": true,
+              "text": "time",
+              "word_wrap": false,
+              "auto_size": "SHAPE_TO_FIT_TEXT",
+              "vertical_anchor": null,
+              "margins": {
+                "margin_left": 91440,
+                "margin_right": 91440,
+                "margin_top": 45720,
+                "margin_bottom": 45720
+              },
+              "paragraphs": [
+                {
+                  "text": "time",
+                  "alignment": "CENTER",
+                  "level": 0,
+                  "runs": [
+                    {
+                      "text": "time",
+                      "font": {
+                        "name": "Arial",
+                        "size": 177800,
+                        "bold": true,
+                        "italic": null,
+                        "underline": null,
+                        "color": {
+                          "rgb": "FFFF00",
+                          "theme_color": "NOT_THEME_COLOR",
+                          "brightness": 0
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "fill": {
+              "type": "SOLID",
+              "fore_color": {
+                "theme_color": "ACCENT_1",
+                "brightness": 0
+              }
+            },
+            "line": {
+              "width": "0",
+              "dash_style": null,
+              "color": {}
+            },
+            "picture": null
+          },
+          {
+            "id": "2",
+            "name": "TextBox 1",
+            "shape_type": "TEXT_BOX (17)",
+            "shape_type_name": "TEXT_BOX",
+            "rotation": 0.0,
+            "bbox": {
+              "emu": {
+                "x": 5591242,
+                "y": 9983187,
+                "width": 5334000,
+                "height": 307777
+              },
+              "inches": {
+                "x": 6.1147,
+                "y": 10.9177,
+                "width": 5.8333,
+                "height": 0.3366
+              },
+              "normalized": {
+                "x": 0.369924,
+                "y": 0.934,
+                "width": 0.352904,
+                "height": 0.028795
+              }
+            },
+            "placeholder": null,
+            "text": {
+              "has_text_frame": true,
+              "text": "comment",
+              "word_wrap": true,
+              "auto_size": "SHAPE_TO_FIT_TEXT",
+              "vertical_anchor": null,
+              "margins": {
+                "margin_left": 91440,
+                "margin_right": 91440,
+                "margin_top": 45720,
+                "margin_bottom": 45720
+              },
+              "paragraphs": [
+                {
+                  "text": "comment",
+                  "alignment": "CENTER",
+                  "level": 0,
+                  "runs": [
+                    {
+                      "text": "c",
+                      "font": {
+                        "name": "Arial",
+                        "size": 177800,
+                        "bold": true,
+                        "italic": null,
+                        "underline": null,
+                        "color": {
+                          "rgb": "FFFF00",
+                          "theme_color": "NOT_THEME_COLOR",
+                          "brightness": 0
+                        }
+                      }
+                    },
+                    {
+                      "text": "omment",
+                      "font": {
+                        "name": "Arial",
+                        "size": 177800,
+                        "bold": true,
+                        "italic": null,
+                        "underline": null,
+                        "color": {
+                          "rgb": "FFFF00",
+                          "theme_color": "NOT_THEME_COLOR",
+                          "brightness": 0
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "fill": {
+              "type": "SOLID",
+              "fore_color": {
+                "theme_color": "ACCENT_1",
+                "brightness": 0
+              }
+            },
+            "line": {
+              "width": "0",
+              "dash_style": null,
+              "color": {}
+            },
+            "picture": null
+          },
+          {
+            "id": "9",
+            "name": "Picture 8",
+            "shape_type": "PICTURE (13)",
+            "shape_type_name": "PICTURE",
+            "rotation": 0.0,
+            "bbox": {
+              "emu": {
+                "x": 14242111,
+                "y": 1059061,
+                "width": 296883,
+                "height": 694252
+              },
+              "inches": {
+                "x": 15.5754,
+                "y": 1.1582,
+                "width": 0.3247,
+                "height": 0.7592
+              },
+              "normalized": {
+                "x": 0.942276,
+                "y": 0.099083,
+                "width": 0.019642,
+                "height": 0.064952
+              }
+            },
+            "placeholder": null,
+            "text": {
+              "has_text_frame": false,
+              "text": "",
+              "paragraphs": []
+            },
+            "fill": null,
+            "line": {
+              "width": "0",
+              "dash_style": null,
+              "color": {}
+            },
+            "picture": {
+              "relationship_id": "rId3",
+              "relationship_target": "../media/image2.emf",
+              "crop": {
+                "crop_left": 0.0,
+                "crop_right": 0.0,
+                "crop_top": 0.0,
+                "crop_bottom": 0.0
+              },
+              "media": {
+                "relationship_target": "../media/image2.emf",
+                "resolved_path": "ppt/media/image2.emf",
+                "found": true,
+                "bytes": 1248,
+                "image": {
+                  "format": "WMF",
+                  "width_px": 31,
+                  "height_px": 74,
+                  "mode": "RGB"
+                }
+              }
+            }
+          },
+          {
+            "id": "8",
+            "name": "TextBox 7",
+            "shape_type": "TEXT_BOX (17)",
+            "shape_type_name": "TEXT_BOX",
+            "rotation": 0.0,
+            "bbox": {
+              "emu": {
+                "x": 5423694,
+                "y": 6868319,
+                "width": 1479227,
+                "height": 448474
+              },
+              "inches": {
+                "x": 5.9314,
+                "y": 7.5113,
+                "width": 1.6177,
+                "height": 0.4905
+              },
+              "normalized": {
+                "x": 0.358838,
+                "y": 0.642581,
+                "width": 0.097868,
+                "height": 0.041958
+              }
+            },
+            "placeholder": null,
+            "text": {
+              "has_text_frame": true,
+              "text": "ABC",
+              "word_wrap": false,
+              "auto_size": null,
+              "vertical_anchor": "MIDDLE",
+              "margins": {
+                "margin_left": 79352,
+                "margin_right": 79352,
+                "margin_top": 39676,
+                "margin_bottom": 39676
+              },
+              "paragraphs": [
+                {
+                  "text": "ABC",
+                  "alignment": null,
+                  "level": 0,
+                  "runs": [
+                    {
+                      "text": "ABC",
+                      "font": {
+                        "name": "Arial",
+                        "size": 177800,
+                        "bold": null,
+                        "italic": null,
+                        "underline": null,
+                        "color": {}
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "fill": {
+              "type": "BACKGROUND"
+            },
+            "line": {
+              "width": "0",
+              "dash_style": null,
+              "color": {}
+            },
+            "picture": null
+          },
+          {
+            "id": "10",
+            "name": "TextBox 9",
+            "shape_type": "TEXT_BOX (17)",
+            "shape_type_name": "TEXT_BOX",
+            "rotation": 0.0,
+            "bbox": {
+              "emu": {
+                "x": 6538900,
+                "y": 7977279,
+                "width": 1479227,
+                "height": 448474
+              },
+              "inches": {
+                "x": 7.151,
+                "y": 8.7241,
+                "width": 1.6177,
+                "height": 0.4905
+              },
+              "normalized": {
+                "x": 0.432622,
+                "y": 0.746333,
+                "width": 0.097868,
+                "height": 0.041958
+              }
+            },
+            "placeholder": null,
+            "text": {
+              "has_text_frame": true,
+              "text": "XYZ",
+              "word_wrap": false,
+              "auto_size": null,
+              "vertical_anchor": "MIDDLE",
+              "margins": {
+                "margin_left": 79352,
+                "margin_right": 79352,
+                "margin_top": 39676,
+                "margin_bottom": 39676
+              },
+              "paragraphs": [
+                {
+                  "text": "XYZ",
+                  "alignment": null,
+                  "level": 0,
+                  "runs": [
+                    {
+                      "text": "XYZ",
+                      "font": {
+                        "name": "Arial",
+                        "size": 177800,
+                        "bold": null,
+                        "italic": null,
+                        "underline": null,
+                        "color": {}
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "fill": {
+              "type": "BACKGROUND"
+            },
+            "line": {
+              "width": "0",
+              "dash_style": null,
+              "color": {}
+            },
+            "picture": null
+          }
+        ]
+      }
+    ],
+    "map_shape": {
+      "id": "1026",
+      "name": "Picture 2",
+      "selection_rule": "explicit option or largest picture on selected slide"
+    },
+    "limitations": [
+      "This JSON is metadata for inspecting and addressing the PPTX template.",
+      "It is not a full reversible serialization of the PPTX package.",
+      "The original PPTX file is still required for export and editing."
+    ]
+  }
+}

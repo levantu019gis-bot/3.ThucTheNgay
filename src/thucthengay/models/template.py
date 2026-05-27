@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -12,6 +13,7 @@ class PlaceholderType(StrEnum):
 
     MAP_IMAGE = "map_image"
     TEXT = "text"
+    IMAGE = "image"
 
 
 class MapFrame(BaseModel):
@@ -26,13 +28,14 @@ class MapFrame(BaseModel):
 
 
 class TemplatePlaceholder(BaseModel):
-    """Named shape placeholder in a target-specific PPTX template."""
+    """Element-id placeholder in a target-specific PPTX template."""
 
     model_config = ConfigDict(extra="forbid")
 
-    name: str
+    field: str
+    element_id: int = Field(gt=0)
     kind: PlaceholderType
-    fallback_id: str | None = None
+    diagnostic_name: str | None = None
     required: bool = True
 
 
@@ -45,3 +48,4 @@ class TemplateMetadata(BaseModel):
     slide_index: int = Field(ge=0)
     map_frame: MapFrame
     placeholders: list[TemplatePlaceholder] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)

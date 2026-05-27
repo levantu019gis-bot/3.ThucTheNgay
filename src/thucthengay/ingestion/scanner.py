@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from hashlib import sha1
 from pathlib import Path
@@ -67,7 +68,14 @@ class ImageryScanResult:
     warnings: list[Issue]
 
 
-def scan_imagery_folder(folder: str | Path) -> ImageryScanResult:
+ScanProgressCallback = Callable[[int, int, int], None]
+
+
+def scan_imagery_folder(
+    folder: str | Path,
+    *,
+    on_progress: ScanProgressCallback | None = None,
+) -> ImageryScanResult:
     """Recursively scan an imagery folder for usable GeoTIFFs."""
     root = Path(folder).expanduser().resolve()
     if not root.is_dir():
@@ -76,8 +84,12 @@ def scan_imagery_folder(folder: str | Path) -> ImageryScanResult:
 
     rasters: list[ScannedGeoTiff] = []
     warnings: list[Issue] = []
+    geotiff_paths = discover_geotiffs(root)
+    total = len(geotiff_paths)
+    if on_progress is not None:
+        on_progress(0, total, 0)
 
-    for geotiff_path in discover_geotiffs(root):
+    for index, geotiff_path in enumerate(geotiff_paths, start=1):
         scanned, issue = _scan_geotiff(geotiff_path)
         if issue is not None:
             warnings.append(issue)
@@ -86,6 +98,8 @@ def scan_imagery_folder(folder: str | Path) -> ImageryScanResult:
             missing_issue = _missing_metadata_warning(scanned)
             if missing_issue is not None:
                 warnings.append(missing_issue)
+        if on_progress is not None:
+            on_progress(index, total, len(rasters))
 
     return ImageryScanResult(rasters=rasters, warnings=warnings)
 

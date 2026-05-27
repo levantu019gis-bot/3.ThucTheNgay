@@ -544,3 +544,28 @@ def test_included_export_candidates_refuse_stale_or_errored_persisted_state(
     assert [composition.composition_id for composition in service.included_export_candidates()] == [
         "clean"
     ]
+
+
+def test_record_final_render_artifacts_and_edit_invalidation(tmp_path: Path) -> None:
+    service = WorkspaceService(tmp_path / "workspace")
+    service.initialize(config_path="config.json")
+    service.write_composition(valid_composition())
+
+    rendered = service.record_final_render_artifacts(
+        "target_001__20260525",
+        final_render_path="renders/target_001__20260525.abcd1234.png",
+        render_log_path="renders/target_001__20260525.render-log.json",
+    )
+
+    assert rendered.artifacts.final_render_path == "renders/target_001__20260525.abcd1234.png"
+    assert rendered.artifacts.render_log_path == "renders/target_001__20260525.render-log.json"
+
+    stale = service.update_view_state(
+        "target_001__20260525",
+        center=[106.8, 10.9],
+        scale=25000,
+    )
+
+    assert stale.needs_revalidation is True
+    assert stale.artifacts.final_render_path is None
+    assert stale.artifacts.render_log_path is None

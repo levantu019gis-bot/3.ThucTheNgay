@@ -36,6 +36,7 @@ from thucthengay.editor.widgets import (
     SlidePreviewState,
     SlidePreviewWidget,
 )
+from thucthengay.jobs import JobState, PreviewRenderController, PreviewRenderJobResult
 from thucthengay.models import (
     Composition,
     GridConfig,
@@ -48,6 +49,8 @@ from thucthengay.models import (
     ValidationSummary,
     ViewState,
 )
+from thucthengay.models.template import MapFrame
+from thucthengay.render.spec import GeoWindow, RenderBackground, RenderLayerRef, RenderSpec
 from thucthengay.workspace import WorkspaceService
 
 
@@ -110,6 +113,33 @@ def composition(
                 metadata_source=MetadataSource.FILENAME,
             )
         ],
+    )
+
+
+def _preview_spec(composition_id: str, *, width: int = 1200, height: int = 800) -> RenderSpec:
+    return RenderSpec(
+        composition_id=composition_id,
+        target_id="alpha",
+        output_width=width,
+        output_height=height,
+        view_center=[106.7, 10.8],
+        view_scale=50000,
+        map_frame=MapFrame(x=0, y=0, width=640, height=360),
+        map_frame_aspect=16 / 9,
+        geo_window=GeoWindow(min_lon=106.5, min_lat=10.6, max_lon=106.9, max_lat=11.0),
+        visible_layers=[
+            RenderLayerRef(
+                layer_id="L1",
+                source_path="L1.tif",
+                cache_path="cache/L1.tif",
+                order=0,
+            )
+        ],
+        grid=GridConfig(interval=GridInterval(minutes=1)),
+        background=RenderBackground(color="#FFFFFF"),
+        template_metadata_file="alpha.template.json",
+        template_pptx="alpha.pptx",
+        slide_index=0,
     )
 
 
@@ -364,7 +394,7 @@ def test_review_edit_invalid_fallback_map_frame_becomes_validation_issue(
     mode.tree_view.setCurrentIndex(mode.tree_model.index(0, 0, target_index))
 
     assert mode.warnings_panel._list.count() == 1
-    assert "Template metadata" in mode.warnings_panel._list.item(0).text()
+    assert "PPTX template" in mode.warnings_panel._list.item(0).text()
 
 
 def test_layer_stack_model_display_roles_and_no_visible_warning() -> None:
@@ -554,6 +584,125 @@ def test_slide_preview_review_edge_cases_do_not_accept_stale_results() -> None:
     assert preview.apply_preview_result(stale_token, "old preview") is False
     assert preview.state() == SlidePreviewState.RENDER_ERROR
     assert "tiếp tục chỉnh sửa" in preview.detail_text()
+
+
+def test_slide_preview_applies_only_current_preview_job_results() -> None:
+    qapp()
+    preview = SlidePreviewWidget(debounce_ms=1)
+    selected = composition(
+        "alpha__20260525",
+        "alpha",
+        date(2026, 5, 25),
+        needs_revalidation=False,
+    )
+    preview.set_composition(selected)
+
+    controller = PreviewRenderController(debounce_ms=1)
+    first = controller.request_preview(_preview_spec("alpha__20260525"))
+    preview.track_preview_plan(first)
+
+    updated = selected.model_copy(
+        update={"view": ViewState(center=[106.8, 10.9], scale=25000)}
+    )
+    preview.set_composition(updated)
+    second = controller.request_preview(_preview_spec("alpha__20260525", width=480, height=320))
+    preview.track_preview_plan(second)
+
+    old_result = PreviewRenderJobResult(
+        job_id=first.interactive.job_id,
+        composition_id="alpha__20260525",
+        revision=first.interactive.revision,
+        quality=first.interactive.quality,
+        state=JobState.SUCCESS,
+        output_width=320,
+        output_height=213,
+        message="old",
+    )
+    current_result = PreviewRenderJobResult(
+        job_id=second.interactive.job_id,
+        composition_id="alpha__20260525",
+        revision=second.interactive.revision,
+        quality=second.interactive.quality,
+        state=JobState.SUCCESS,
+        output_width=480,
+        output_height=320,
+        message="current",
+    )
+
+    assert preview.apply_preview_job_result(old_result) is False
+    assert preview.apply_preview_job_result(current_result) is True
+    assert preview.state() == SlidePreviewState.RENDERED
+    assert "interactive_low_res" in preview.detail_text()
+    assert "480x320" in preview.detail_text()
+
+
+def test_slide_preview_rejects_late_low_res_after_settled_job_result() -> None:
+    qapp()
+    preview = SlidePreviewWidget(debounce_ms=1)
+    selected = composition(
+        "alpha__20260525",
+        "alpha",
+        date(2026, 5, 25),
+        needs_revalidation=False,
+    )
+    preview.set_composition(selected)
+    plan = PreviewRenderController(debounce_ms=1).request_preview(_preview_spec("alpha__20260525"))
+    preview.track_preview_plan(plan)
+
+    settled = PreviewRenderJobResult(
+        job_id=plan.settled.job_id,
+        composition_id="alpha__20260525",
+        revision=plan.settled.revision,
+        quality=plan.settled.quality,
+        state=JobState.SUCCESS,
+        output_width=960,
+        output_height=640,
+        message="settled",
+    )
+    late_low_res = PreviewRenderJobResult(
+        job_id=plan.interactive.job_id,
+        composition_id="alpha__20260525",
+        revision=plan.interactive.revision,
+        quality=plan.interactive.quality,
+        state=JobState.SUCCESS,
+        output_width=480,
+        output_height=320,
+        message="late low-res",
+    )
+
+    assert preview.apply_preview_job_result(settled) is True
+    assert "settled_high_res" in preview.detail_text()
+    assert preview.apply_preview_job_result(late_low_res) is False
+    assert "settled_high_res" in preview.detail_text()
+
+
+def test_slide_preview_job_failure_sets_recoverable_render_error() -> None:
+    qapp()
+    preview = SlidePreviewWidget(debounce_ms=1)
+    selected = composition(
+        "alpha__20260525",
+        "alpha",
+        date(2026, 5, 25),
+        needs_revalidation=False,
+    )
+    preview.set_composition(selected)
+    plan = PreviewRenderController(debounce_ms=1).request_preview(_preview_spec("alpha__20260525"))
+    preview.track_preview_plan(plan)
+
+    failure = PreviewRenderJobResult(
+        job_id=plan.settled.job_id,
+        composition_id="alpha__20260525",
+        revision=plan.settled.revision,
+        quality=plan.settled.quality,
+        state=JobState.ERROR,
+        output_width=960,
+        output_height=640,
+        message="Khong tao duoc preview. Kiem tra raster roi thu lai.",
+    )
+
+    assert preview.apply_preview_job_result(failure) is True
+    assert preview.state() == SlidePreviewState.RENDER_ERROR
+    assert "Kiem tra raster" in preview.detail_text()
 
 
 def test_review_edit_layer_stack_saves_visibility_order_and_warning(
@@ -1188,9 +1337,10 @@ def test_review_edit_layout_and_app_shell_expose_review_mode() -> None:
 
     shell = AppShell()
 
-    assert shell.mode_tabs.count() == 2
+    assert shell.mode_tabs.count() == 3
     assert shell.mode_tabs.tabText(0) == "Setup"
     assert shell.mode_tabs.tabText(1) == "Review/Edit"
+    assert shell.mode_tabs.tabText(2) == "Export"
     assert isinstance(shell.review_edit_mode.tree_view, QTreeView)
     assert QueueFilter.ALL in shell.review_edit_mode.filter_buttons
     assert isinstance(shell.review_edit_mode.layer_table, QTableView)

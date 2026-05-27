@@ -160,16 +160,21 @@ def test_ingestion_job_emits_progress_counters_and_success_state(tmp_path: Path)
     assert result.targets_with_images_count == 1
     assert result.composition_ids == ["target_001__20260525"]
     assert workspace.load_manifest().composition_ids == ["target_001__20260525"]
-    assert [event.stage for event in events] == [
-        "setup",
-        "scan",
-        "match",
-        "cache",
-        "complete",
-    ]
-    match_event = next(event for event in events if event.stage == "match")
+    assert events[0].stage == "setup"
+    assert events[-1].stage == "complete"
+    scan_events = [event for event in events if event.stage == "scan"]
+    assert scan_events[0].scanned_file_count == 0
+    assert scan_events[0].total_image_count == 1
+    assert scan_events[-1].scanned_file_count == 1
+    assert scan_events[-1].total_image_count == 1
+    assert scan_events[-1].scanned_image_count == 1
+    match_events = [event for event in events if event.stage == "match"]
+    match_event = match_events[0]
+    assert match_event.processed_target_count == 1
+    assert match_event.total_target_count == 1
     assert match_event.current_target_id == "target_001"
     assert match_event.current_target_matched_count == 1
+    assert match_events[-1].matched_image_count == 1
     assert events[-1].state == JobState.SUCCESS
     assert events[-1].warning_count == 0
 

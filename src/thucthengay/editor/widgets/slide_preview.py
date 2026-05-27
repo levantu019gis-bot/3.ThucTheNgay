@@ -10,6 +10,7 @@ from typing import Any
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
+from thucthengay.jobs import JobState, PreviewRenderJobResult, PreviewRenderPlan
 from thucthengay.models import Composition, GridConfig, ImageLayer
 
 
@@ -58,6 +59,9 @@ class SlidePreviewWidget(QWidget):
         self._state = SlidePreviewState.EMPTY
         self._last_token: PreviewRequestToken | None = None
         self._pending_render: tuple[PreviewRequestToken, str] | None = None
+        self._preview_job_revision: int | None = None
+        self._preview_job_ids: set[str] = set()
+        self._preview_job_applied_quality_rank = -1
 
         self.status_label = QLabel("Chưa chọn composition.")
         self.status_label.setObjectName("reviewPreviewSummary")
@@ -100,6 +104,7 @@ class SlidePreviewWidget(QWidget):
         self._timer.stop()
         self._render_timer.stop()
         self._pending_render = None
+        self._clear_preview_job_tracking()
 
         if composition is None:
             self._state = SlidePreviewState.EMPTY
@@ -120,6 +125,38 @@ class SlidePreviewWidget(QWidget):
         self.detail_label.setText(self._preview_text(composition))
         self._last_token = self.begin_preview_request()
         self._timer.start(self._debounce_ms)
+
+    def track_preview_plan(self, plan: PreviewRenderPlan) -> None:
+        """Track the current two-stage preview plan for stale job-result filtering."""
+        if self._composition is None:
+            return
+        self._preview_job_revision = plan.interactive.revision
+        self._preview_job_ids = {plan.interactive.job_id, plan.settled.job_id}
+        self._preview_job_applied_quality_rank = -1
+        self._state = SlidePreviewState.LOADING
+        self.status_label.setText("Đang cập nhật preview hai tầng...")
+
+    def apply_preview_job_result(self, result: PreviewRenderJobResult) -> bool:
+        """Apply only current-revision preview job results to the widget."""
+        if not self._matches_preview_job(result):
+            return False
+        if result.state == JobState.ERROR:
+            self.set_render_error(result.message)
+            return True
+        if result.state not in {JobState.SUCCESS, JobState.WARNING}:
+            return False
+        quality_rank = _preview_quality_rank(result)
+        if quality_rank < self._preview_job_applied_quality_rank:
+            return False
+        self._preview_job_applied_quality_rank = quality_rank
+
+        self._state = SlidePreviewState.RENDERED
+        self.status_label.setText("Preview đã cập nhật.")
+        issue_text = f"; issues: {len(result.issues)}" if result.issues else ""
+        self.detail_label.setText(
+            f"{result.quality.value} {result.output_width}x{result.output_height}{issue_text}"
+        )
+        return True
 
     def begin_preview_request(self) -> PreviewRequestToken:
         """Capture the current preview generation and render-affecting signature."""
@@ -147,6 +184,7 @@ class SlidePreviewWidget(QWidget):
         self._render_timer.stop()
         self._pending_render = None
         self._last_token = None
+        self._clear_preview_job_tracking()
         self._state = SlidePreviewState.RENDER_ERROR
         self.status_label.setText("Preview lỗi render.")
         self.detail_label.setText(
@@ -217,6 +255,26 @@ class SlidePreviewWidget(QWidget):
 
     def _bump_generation(self) -> None:
         self._generation += 1
+
+    def _clear_preview_job_tracking(self) -> None:
+        self._preview_job_revision = None
+        self._preview_job_ids = set()
+        self._preview_job_applied_quality_rank = -1
+
+    def _matches_preview_job(self, result: PreviewRenderJobResult) -> bool:
+        if self._composition is None:
+            return False
+        return (
+            result.composition_id == self._composition.composition_id
+            and result.revision == self._preview_job_revision
+            and result.job_id in self._preview_job_ids
+        )
+
+
+def _preview_quality_rank(result: PreviewRenderJobResult) -> int:
+    if result.quality.value == "settled_high_res":
+        return 1
+    return 0
 
 
 def _visible_layers(composition: Composition) -> list[ImageLayer]:

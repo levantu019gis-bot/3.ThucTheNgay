@@ -7,6 +7,9 @@ from thucthengay.models import (
     GridConfig,
     GridInterval,
     ImageLayer,
+    Issue,
+    IssueScope,
+    IssueSeverity,
     MapFrame,
     MetadataStatus,
     TargetConfig,
@@ -30,7 +33,7 @@ def target_config() -> TargetConfig:
         coordinate=[106.7, 10.8],
         scale=50000,
         grid=GridConfig(interval=GridInterval(minutes=1)),
-        export={"template_metadata_file": "templates/alpha.template.json"},
+        export={"template_pptx_file": "templates/alpha.pptx"},
     )
 
 
@@ -152,7 +155,7 @@ def test_missing_template_metadata_blocks_with_target_remediation() -> None:
     issue = result.issues[0]
     assert issue.issue_id == "template.metadata_missing"
     assert issue.target_id == "alpha"
-    assert "template metadata" in issue.remediation
+    assert "PPTX template" in issue.remediation
 
 
 def test_invalid_template_metadata_error_blocks_readiness() -> None:
@@ -205,3 +208,19 @@ def test_export_preflight_recomputes_included_composition_issues() -> None:
     assert "composition.no_visible_layer" in issue_ids(result)
     assert result.summary.error_count == 1
     assert result.blocking is True
+
+
+def test_export_preflight_surfaces_template_compatibility_issues() -> None:
+    warning = Issue(
+        issue_id="target.template_compatibility_unknown",
+        severity=IssueSeverity.WARNING,
+        scope=IssueScope.TEMPLATE,
+        message="Nhieu PPTX template chua xac minh tuong thich.",
+        remediation="Kiem tra base/theme/master truoc khi export.",
+    )
+
+    result = validate_export_preflight([context()], template_issues=[warning])
+
+    assert "target.template_compatibility_unknown" in issue_ids(result)
+    assert result.summary.warning_count == 1
+    assert result.blocking is False

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pytest
 from pydantic import ValidationError
@@ -8,6 +8,10 @@ from pydantic import ValidationError
 from thucthengay.models import (
     Composition,
     ExportLog,
+    FinalRenderLog,
+    FinalRenderLogEntry,
+    FinalRenderResult,
+    FinalRenderStatus,
     GridConfig,
     GridInterval,
     ImageLayer,
@@ -43,16 +47,22 @@ def valid_target_dict() -> dict[str, object]:
         "coordinate": [106.7, 10.8],
         "scale": 50000,
         "grid": {"interval": {"minutes": 1}},
-        "export": {"template_metadata_file": "templates/target_001.template.json"},
+        "export": {
+            "template_pptx_file": "templates/target_001.pptx",
+            "placeholders": [
+                {"field": "map_image", "kind": "map_image", "element_id": 2}
+            ],
+        },
     }
 
 
-def test_project_config_supports_target_specific_template_metadata() -> None:
+def test_project_config_supports_target_specific_template_pptx() -> None:
     config = ProjectConfig.model_validate({"targets": [valid_target_dict()]})
 
     target = config.targets[0]
 
-    assert target.export.template_metadata_file == "templates/target_001.template.json"
+    assert target.export.template_pptx_file == "templates/target_001.pptx"
+    assert target.export.placeholders[0].element_id == 2
     assert target.geojson_file == "targets/target_001.geojson"
     assert target.coordinate == [106.7, 10.8]
     assert target.scale == 50000
@@ -94,15 +104,28 @@ def test_template_metadata_requires_template_path_and_map_frame() -> None:
         slide_index=0,
         map_frame=MapFrame(x=10, y=20, width=640, height=360),
         placeholders=[
-            TemplatePlaceholder(name="MapFrame", kind="map_image"),
-            TemplatePlaceholder(name="Title", kind="text", required=False),
+            TemplatePlaceholder(field="map_image", element_id=2, kind="map_image"),
+            TemplatePlaceholder(field="title", element_id=3, kind="text", required=False),
         ],
+        metadata={
+            "selected_slide": {
+                "shapes": [
+                    {
+                        "id": "7",
+                        "name": "TextBox 6",
+                        "text": {"text": "NAME, TIME"},
+                    }
+                ]
+            }
+        },
     )
 
     dumped = metadata.model_dump(mode="json")
 
     assert dumped["template_pptx"] == "templates/target_001.pptx"
     assert dumped["placeholders"][0]["kind"] == "map_image"
+    assert dumped["placeholders"][0]["element_id"] == 2
+    assert dumped["metadata"]["selected_slide"]["shapes"][0]["text"]["text"] == "NAME, TIME"
 
 
 def test_template_metadata_missing_required_field_has_field_location() -> None:
@@ -233,6 +256,38 @@ def test_workspace_render_and_export_models_round_trip() -> None:
     assert restored_manifest.config_path == "config.json"
     assert RenderResult.model_validate(render_result.model_dump(mode="json")).width == 1920
     assert ExportLog.model_validate(export_log.model_dump(mode="json")).slide_count == 1
+
+
+def test_final_render_log_and_result_models_round_trip() -> None:
+    entry = FinalRenderLogEntry(
+        composition_id="target_001__20260525",
+        target_id="target_001",
+        status=FinalRenderStatus.SUCCESS,
+        output_path="renders/target_001__20260525.abcd1234.png",
+        width=1920,
+        height=1080,
+        render_spec_hash="abcd1234",
+        visible_layer_refs=["L1", "L2"],
+        timestamp=datetime(2026, 5, 26, 8, 30, tzinfo=UTC),
+    )
+    log = FinalRenderLog(entries=[entry])
+    result = FinalRenderResult(
+        composition_id="target_001__20260525",
+        target_id="target_001",
+        status=FinalRenderStatus.SUCCESS,
+        output_path="renders/target_001__20260525.abcd1234.png",
+        log_path="renders/target_001__20260525.render-log.json",
+        width=1920,
+        height=1080,
+        render_spec_hash="abcd1234",
+    )
+
+    restored_log = FinalRenderLog.model_validate(log.model_dump(mode="json"))
+    restored_result = FinalRenderResult.model_validate(result.model_dump(mode="json"))
+
+    assert restored_log.entries[0].status == FinalRenderStatus.SUCCESS
+    assert restored_log.entries[0].visible_layer_refs == ["L1", "L2"]
+    assert restored_result.output_path == "renders/target_001__20260525.abcd1234.png"
 
 
 def test_persisted_validation_state_distinguishes_stale_clean_warning_error() -> None:

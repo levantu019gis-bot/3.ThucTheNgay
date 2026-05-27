@@ -34,8 +34,12 @@ class ProgressEvent(BaseModel):
     message: str
     issues: list[Issue] = Field(default_factory=list)
     scanned_image_count: int = 0
+    scanned_file_count: int = 0
+    total_image_count: int = 0
     matched_image_count: int = 0
     targets_with_images_count: int = 0
+    processed_target_count: int = 0
+    total_target_count: int = 0
     warning_count: int = 0
     current_target_id: str | None = None
     current_target_name: str | None = None

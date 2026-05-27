@@ -6,6 +6,53 @@ Python desktop application scaffold for preparing satellite imagery report outpu
 
 This project uses Python 3.11 and `uv` project management.
 
+### Run the app
+
+Windows PowerShell:
+
+```powershell
+.\run_windows.ps1
+```
+
+Windows Command Prompt:
+
+```bat
+run_windows.bat
+```
+
+Ubuntu:
+
+```bash
+chmod +x ./run_ubuntu.sh
+./run_ubuntu.sh
+```
+
+All launchers use the conda environment `ttn-env` by default and set `PYTHONPATH=src` before
+running `python -m thucthengay`. To use a different conda environment, set `TTN_CONDA_ENV`.
+
+### Generate real data config
+
+The current real target config is generated from one GeoJSON `Feature` per target in
+`webapp_geojson/output_geojson`. Each GeoJSON `properties.center` is treated as `[lat, lon]` and
+written to app config `coordinate` as `[lon, lat]`. The original GeoJSON `properties` and
+`geometry` are preserved under each target's `metadata`.
+
+```powershell
+conda run -n ttn-env python scripts\generate_template_metadata.py `
+  examples\templates\target_001.template.pptx `
+  --output examples\templates\target_001.template.json
+
+conda run -n ttn-env python scripts\generate_config_from_geojson.py `
+  webapp_geojson\output_geojson `
+  --output config.json `
+  --template-pptx examples\templates\target_001.template.pptx `
+  --map-element-id 1026
+```
+
+`config.json` points directly to the one-slide PPTX template through
+`export.template_pptx_file`. `scripts/generate_template_metadata.py` is now an inspection aid for
+discovering shape ids and text content; the app does not require the generated JSON at runtime.
+
 ```bash
 uv sync --dev
 uv run pytest
@@ -26,7 +73,6 @@ and shapely are resolved together by conda-forge:
 ```bash
 conda env create -f environment.yml
 conda activate ttn-env
-conda install -c conda-forge uv pytest ruff
 UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX" uv pip install --no-deps -e .
 UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX" uv run --no-sync pytest
 UV_PROJECT_ENVIRONMENT="$CONDA_PREFIX" uv run --no-sync ruff check .

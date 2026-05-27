@@ -44,7 +44,7 @@ FR13: Show slide preview that updates when view/layer/grid/metadata changes; use
 
 FR14: Support manual metadata correction for layer capture date/time; persist metadata_status/source; confirm file move when edited date changes cache folder; block ready until metadata can produce time label.
 
-FR15: Render map output from composition state, target config, template metadata, and output size; use view center/scale, visible layer order, grid, background, map frame aspect; derive the raster read window from center/scale; do not render boundary/north arrow/scale bar in MVP; record final PNG width/height in render log.
+FR15: Render map output from composition state, target config, target PPTX map-frame bounds, and output size; use view center/scale, visible layer order, coordinate frame labels, background, map frame aspect; derive the raster read window from center/scale and map-frame physical size; do not render boundary/north arrow/scale bar in MVP; record final PNG width/height in render log.
 
 FR16: Provide hybrid preview/final render pipeline; two-stage GIS preview with interactive low-res and settled high-res; final render at template output quality; ignore/cancel stale render jobs; first slice must keep preview/final aligned on center/scale/layer/grid.
 
@@ -54,9 +54,9 @@ FR18: Validate when selecting composition, when pressing right arrow/include, an
 
 FR19: Surface issues in tree/layer UI and Warnings panel; support navigation from aggregate issue to related target/composition/layer.
 
-FR20: Load target-specific template metadata from target config; metadata includes template_pptx, slide_index, map frame, placeholders; shape lookup by name primary/fallback_id optional; template missing/invalid is blocking error.
+FR20: Load target-specific one-slide PowerPoint template directly from target config; config includes template_pptx_file and PPTX shape-id replacement mapping for map frame and text/image placeholders; template missing/invalid or unresolved required shape ids are blocking errors.
 
-FR21: Export one combined PPTX from included compositions sorted by review_order; each composition copies a target-specific sample slide; target templates must share compatible base/theme/master; replace map image/text placeholders.
+FR21: Export one combined PPTX from included compositions sorted by review_order; each composition copies the only slide from its target-specific PPTX template; target templates must share compatible base/theme/master where required by the copy implementation; replace map image/text placeholders by configured PPTX element ids.
 
 FR22: Export TXT with one line per included composition using configured txt_line_template; time label from visible valid layers; unresolved required placeholders are validation errors; optional fields render empty only when marked optional.
 
@@ -88,7 +88,7 @@ AR1: Initialize project with custom Python package scaffold using `uv init --app
 
 AR2: Use layered package architecture: models, config, workspace, ingestion, gis, render, validation, export, jobs, editor, utils.
 
-AR3: Use Pydantic models for config, workspace, composition, layer, template metadata, issue, render result, export log.
+AR3: Use Pydantic models for config, workspace, composition, layer, target export template mapping, issue, render result, export log.
 
 AR4: All workspace read/write operations must go through `WorkspaceService`; UI must not parse/write JSON directly.
 
@@ -106,7 +106,7 @@ AR10: Isolate PPTX slide-copy risk in `export/pptx_slide_copy.py`; start with on
 
 AR11: User project data lives outside application source tree: `project_data/config.json`, `targets/`, `templates/`, `imagery/`, `workspace/`.
 
-AR12: Paths in config resolve relative to config file; paths in template metadata resolve relative to metadata file; workspace stores workspace-relative paths where possible.
+AR12: Paths in config resolve relative to config file; workspace stores workspace-relative paths where possible.
 
 AR13: Tests must include fixtures for configs, GeoJSON, GeoTIFF, templates, and workspaces; integration tests cover ingest->workspace, final PNG render, one-slide export.
 
@@ -167,7 +167,7 @@ FR16: Epic 5 - Hybrid preview/final render pipeline.
 FR17: Epic 4 - Structured issues.
 FR18: Epic 4 - Validation timing and gating.
 FR19: Epic 4 - Issues surfaced in UI.
-FR20: Epic 6 - Target-specific template metadata.
+FR20: Epic 6 - Target-specific one-slide PPTX template and element-id replacement map.
 FR21: Epic 6 - Combined PPTX export.
 FR22: Epic 6 - TXT export.
 FR23: Epic 6 - Export summary and logs.
@@ -212,7 +212,7 @@ Operator có preview đáng tin và app tạo được PNG final từ compositio
 
 ### Epic 6: Report Export and Completion Evidence
 
-Operator có thể chạy preflight, xem export plan, xuất một PPTX tổng hợp + TXT theo review_order, dùng target-specific template metadata, và nhận summary/log rõ ràng sau export.
+Operator có thể chạy preflight, xem export plan, xuất một PPTX tổng hợp + TXT theo review_order, dùng target-specific one-slide PPTX template với replacement theo element id, và nhận summary/log rõ ràng sau export.
 
 **FRs covered:** FR20, FR21, FR22, FR23
 **Key architecture/UX coverage:** AR10, UX-DR12, UX-DR13, NFR4
@@ -258,13 +258,13 @@ So that application services share one validated data contract.
 
 **Given** config and workspace JSON data is loaded by services
 **When** the data is parsed
-**Then** Pydantic models validate target config, workspace manifest, composition, layer, template metadata, issue, render result, and export log structures
+**Then** Pydantic models validate target config, workspace manifest, composition, layer, target export template mapping, issue, render result, and export log structures
 **And** validation errors identify the field path that failed
 
-**Given** a target config contains template metadata references
+**Given** a target config contains PowerPoint template references
 **When** the config model is parsed
-**Then** each target supports target-specific template metadata fields
-**And** the model can represent `template_metadata_file`, `geojson_file`, target identity, enabled state, `sort_order`, target `coordinate` `[lon, lat]`, target `scale` as a positive map scale denominator, and target grid interval
+**Then** each target supports target-specific one-slide PPTX template fields and element-id placeholder mappings
+**And** the model can represent `template_pptx_file`, `geojson_file`, target identity, enabled state, `sort_order`, target `coordinate` `[lon, lat]`, target `scale` as a positive map scale denominator, and target grid interval
 
 **Given** a composition is represented in JSON
 **When** it is parsed or serialized
@@ -287,7 +287,7 @@ So that only usable enabled targets enter the workflow.
 
 **Given** the Operator selects a readable `config.json`
 **When** the app loads the config
-**Then** it resolves config-relative paths for target GeoJSON and template metadata files
+**Then** it resolves config-relative paths for target GeoJSON and template PPTX files
 **And** it includes only targets where `enabled=true`
 **And** it sorts enabled targets by `sort_order`
 
@@ -301,15 +301,15 @@ So that only usable enabled targets enter the workflow.
 **Then** the load fails with a structured issue tied to the target field path
 **And** the Vietnamese remediation explains that `coordinate` must be `[lon, lat]`, `scale` must be a positive map scale denominator, and grid interval must be valid DMS-compatible configuration
 
-**Given** an enabled target references a missing GeoJSON or template metadata file
+**Given** an enabled target references a missing GeoJSON or template PPTX file
 **When** the config is validated
 **Then** the target receives a blocking validation issue
 **And** ingestion/export cannot proceed for that target until the reference is fixed
 
-**Given** a template metadata file references a PPTX template path
-**When** template metadata is loaded
-**Then** paths inside the metadata resolve relative to the metadata file
-**And** missing or invalid template metadata is treated as a blocking error
+**Given** a target references a PPTX template path and element-id mapping
+**When** export preparation validates the target
+**Then** the PPTX path resolves relative to the config file
+**And** missing or invalid PPTX templates or required element ids are treated as blocking errors
 
 ### Story 1.4: Select Project Paths in Setup Mode
 
@@ -741,7 +741,7 @@ So that I can choose the exact target-centered map view used in the slide map.
 
 **Given** the Operator uses mouse wheel zoom or optional zoom slider
 **When** zoom changes
-**Then** `view.scale` changes while the map frame aspect is preserved according to template metadata/config
+**Then** `view.scale` changes while the map frame aspect is preserved according to target PPTX map-frame bounds/config
 **And** the composition is marked `needs_revalidation=true` and preview stale/needs update
 
 **Given** raster rendering is in progress
@@ -904,10 +904,10 @@ So that invalid slides cannot be marked ready or exported by accident.
 **Then** it produces blocking issues where the invalid state would affect render/export correctness
 **And** the issue references the composition and field area where the fix is needed
 
-**Given** target-specific template metadata is missing or invalid for the composition target
+**Given** target-specific PPTX template or required element-id mapping is missing or invalid for the composition target
 **When** readiness or export validation checks template readiness
 **Then** it produces a blocking error
-**And** the issue explains that the target template metadata or PPTX reference must be fixed
+**And** the issue explains that the target PPTX reference or element-id mapping must be fixed
 
 **Given** a composition has `needs_revalidation=true`
 **When** readiness status is evaluated
@@ -1053,7 +1053,7 @@ So that preview and final rendering use the same source of truth.
 
 **Acceptance Criteria:**
 
-**Given** a composition, target config, template metadata, and requested output size are available
+**Given** a composition, target config, target PPTX map-frame bounds, and requested output size are available
 **When** the render spec builder runs
 **Then** it produces a normalized render spec containing view center, scale denominator, template map-frame physical size/aspect, derived geographic map window, visible layers in draw order, grid settings, background settings, output dimensions, and template references
 **And** the spec uses composition `view.center` `[lon, lat]` and `view.scale` as the persisted source of truth, interpreting scale as the map scale denominator
@@ -1175,7 +1175,7 @@ So that exported PPTX slides use reliable image assets.
 
 **Given** a composition passes render readiness validation
 **When** final render runs
-**Then** it creates a PNG using target config, template metadata, output size, visible layers, view center/scale, grid, background, and map frame aspect from the shared render spec
+**Then** it creates a PNG using target config, target PPTX map-frame bounds, output size, visible layers, view center/scale, coordinate frame labels, background, and map frame aspect from the shared render spec
 **And** the output dimensions match the requested template output quality
 
 **Given** final PNG rendering succeeds
@@ -1203,7 +1203,7 @@ So that future changes do not break map output fidelity.
 
 **Acceptance Criteria:**
 
-**Given** test fixtures include config, GeoJSON, GeoTIFF, template metadata, and workspace composition data
+**Given** test fixtures include config, GeoJSON, GeoTIFF, target PPTX/export mapping, and workspace composition data
 **When** render tests run
 **Then** they cover render spec creation, raster window selection, layer ordering, grid rendering, and final PNG output
 **And** tests can run without launching the Qt UI
@@ -1225,32 +1225,33 @@ So that future changes do not break map output fidelity.
 
 ## Epic 6: Report Export and Completion Evidence
 
-**Goal:** Operator có thể chạy preflight, xem export plan, xuất một PPTX tổng hợp + TXT theo review_order, dùng target-specific template metadata, và nhận summary/log rõ ràng sau export.
+**Goal:** Operator có thể chạy preflight, xem export plan, xuất một PPTX tổng hợp + TXT theo review_order, dùng target-specific one-slide PPTX template với replacement theo element id, và nhận summary/log rõ ràng sau export.
 
-### Story 6.1: Load Target-Specific PowerPoint Template Metadata
+### Story 6.1: Load Target-Specific One-Slide PowerPoint Templates
 
 As an Operator,
-I want each target to use its own PowerPoint template metadata,
-So that report slides can follow target-specific layout rules while still exporting into one combined PPTX.
+I want each target to point directly to its own one-slide PowerPoint template,
+So that report slides can follow target-specific layout rules and replace known PPTX elements by id while still exporting into one combined PPTX.
 
 **Requirement References:** FR20, FR21, AR10, AR12, NFR6
 
 **Acceptance Criteria:**
 
-**Given** a target config references a template metadata file
+**Given** a target config references a `template_pptx_file`
 **When** export preparation loads the target
-**Then** it loads target-specific metadata including `template_pptx`, `slide_index`, map frame, and text/image placeholders
-**And** paths inside the metadata resolve relative to the metadata file
+**Then** it resolves the target-specific PPTX path relative to the config file
+**And** it validates the PPTX contains exactly one template slide for export use
+**And** it loads the configured PPTX element-id mapping for map frame and text/image placeholders from target export config
 
-**Given** template metadata names PowerPoint shapes
+**Given** target export config maps report fields to PowerPoint element ids
 **When** placeholders are resolved
-**Then** shape lookup by name is the primary mechanism
-**And** optional `fallback_id` can be used only when name lookup is not sufficient
+**Then** element id lookup is the primary replacement mechanism
+**And** shape names may be recorded only as diagnostics for human troubleshooting, not as the authoritative lookup key
 
-**Given** template metadata or the referenced PPTX is missing or invalid
+**Given** the referenced PPTX is missing, has zero slides, has more than one slide, or lacks a required element id
 **When** preflight validates the target
 **Then** it creates a blocking issue tied to the target/composition using that template
-**And** the Vietnamese remediation explains which metadata or PPTX reference must be fixed
+**And** the Vietnamese remediation explains which PPTX path or element-id mapping must be fixed
 
 **Given** multiple targets use different template files
 **When** export preflight checks compatibility
@@ -1269,7 +1270,7 @@ So that I can fix blocking issues and understand exactly what will be generated.
 
 **Given** the Operator enters Export mode
 **When** export preflight runs
-**Then** it validates included compositions, target-specific template metadata, required renders, TXT placeholders, and blocking composition issues
+**Then** it validates included compositions, target-specific PPTX templates, required element-id mappings, required renders, TXT placeholders, and blocking composition issues
 **And** it recomputes detailed validation for included compositions rather than trusting stale summaries
 
 **Given** preflight completes
@@ -1334,10 +1335,10 @@ So that the final report is ordered and ready for delivery.
 
 **Given** each included composition belongs to a target
 **When** its slide is created
-**Then** the exporter copies the configured `slide_index` from that target's template PPTX
+**Then** the exporter copies the only slide from that target's template PPTX
 **And** replaces the map image placeholder with the composition final PNG
 
-**Given** text placeholders are configured in template metadata
+**Given** text placeholders are configured as PPTX element-id mappings in target export config
 **When** the exporter creates a slide
 **Then** it replaces configured placeholders using composition, target, layer/time label, and export context values
 **And** unresolved required placeholders create blocking export errors

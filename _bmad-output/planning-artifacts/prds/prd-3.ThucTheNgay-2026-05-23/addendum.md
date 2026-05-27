@@ -32,7 +32,7 @@ Key fields:
 - `scale` as map scale denominator, e.g. `50000` means 1:50,000
 - `grid.interval`
 - `grid` label/style settings
-- `export.template_metadata_file`
+- `export.template_pptx_file`
 - `image_rules`
 - `map_frame.background_rgb`
 - `metadata`
@@ -92,7 +92,7 @@ Issue schema:
 
 - Validation services return detailed `Issue` objects plus a compact summary/gate result.
 - Composition JSON persists only the validation summary; detailed issues are derived from current config/workspace/composition/layer/template state.
-- Enabled target config validation must require `coordinate`, positive `scale` denominator, valid `grid.interval`, `geojson_file`, and `export.template_metadata_file`.
+- Enabled target config validation must require `coordinate`, positive `scale` denominator, valid `grid.interval`, `geojson_file`, and `export.template_pptx_file`.
 - Full composition readiness rules are implemented in the validation layer after workspace/config contracts exist.
 
 ## Rendering Direction
@@ -105,9 +105,9 @@ Issue schema:
 
 ## Template and Export Direction
 
-- Each target has its own template metadata file.
-- Template metadata points to target-specific PPTX template.
-- Shape references use `name` as primary and `fallback_id` optional.
+- Each target points directly to its own one-slide PPTX template.
+- Target export config stores the PowerPoint element-id replacement mapping for map image and text/image placeholders.
+- Shape replacement uses configured PPTX element id as the authoritative lookup key; shape names are diagnostic only.
 - Output remains one combined PPTX sorted by composition review order.
 - MVP constraint: all target templates are created from the same compatible base/theme/master.
 

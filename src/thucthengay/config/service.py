@@ -11,6 +11,12 @@ from pydantic import ValidationError
 
 from thucthengay.config.loader import load_json_file
 from thucthengay.config.path_resolver import resolve_relative_to_file
+from thucthengay.export import (
+    LoadedTemplate,
+    TemplateLoadError,
+    load_target_template,
+    template_compatibility_issues,
+)
 from thucthengay.models import (
     Issue,
     IssueScope,
@@ -27,8 +33,17 @@ class ResolvedTargetPaths:
 
     target_id: str
     geojson_file: Path
-    template_metadata_file: Path
+    template_pptx_file: Path | None = None
+    template_metadata_file: Path | None = None
     template_pptx: Path | None = None
+
+    def __post_init__(self) -> None:
+        if self.template_pptx_file is None:
+            object.__setattr__(
+                self,
+                "template_pptx_file",
+                self.template_pptx or self.template_metadata_file,
+            )
 
 
 @dataclass
@@ -40,6 +55,7 @@ class ConfigLoadResult:
     enabled_targets: list[TargetConfig] = field(default_factory=list)
     target_paths: dict[str, ResolvedTargetPaths] = field(default_factory=dict)
     template_metadata: dict[str, TemplateMetadata] = field(default_factory=dict)
+    loaded_templates: dict[str, LoadedTemplate] = field(default_factory=dict)
     issues: list[Issue] = field(default_factory=list)
 
     @property
@@ -48,7 +64,7 @@ class ConfigLoadResult:
 
 
 def load_project_config(config_path: str | Path) -> ConfigLoadResult:
-    """Load config JSON, enabled target references, and template metadata."""
+    """Load config JSON, enabled target references, and PPTX template metadata."""
     config_file = Path(config_path).resolve()
     result = ConfigLoadResult(config_path=config_file)
 
@@ -103,6 +119,7 @@ def load_project_config(config_path: str | Path) -> ConfigLoadResult:
     for target in result.enabled_targets:
         _validate_target_references(config_file, target, result)
 
+    result.issues.extend(template_compatibility_issues(result.loaded_templates.values()))
     return result
 
 
@@ -126,15 +143,14 @@ def _validate_target_references(
     result: ConfigLoadResult,
 ) -> None:
     geojson_file = resolve_relative_to_file(config_file, target.geojson_file)
-    template_metadata_file = resolve_relative_to_file(
+    template_pptx_file = resolve_relative_to_file(
         config_file,
-        target.export.template_metadata_file,
+        target.export.template_pptx_file,
     )
-
     target_paths = ResolvedTargetPaths(
         target_id=target.id,
         geojson_file=geojson_file,
-        template_metadata_file=template_metadata_file,
+        template_pptx_file=template_pptx_file,
     )
 
     if not geojson_file.is_file():
@@ -143,57 +159,20 @@ def _validate_target_references(
                 "target.geojson_missing",
                 target.id,
                 f"Không tìm thấy GeoJSON của target `{target.id}`: {geojson_file}",
-                "Kiểm tra lại `geojson_file` trong config; "
-                "đường dẫn được tính tương đối từ config.json.",
+                "Kiểm tra lại `geojson_file` trong config; đường dẫn được tính từ config.json.",
             )
         )
-
-    if not template_metadata_file.is_file():
-        result.issues.append(
-            _target_issue(
-                "target.template_metadata_missing",
-                target.id,
-                "Không tìm thấy template metadata của target "
-                f"`{target.id}`: {template_metadata_file}",
-                "Kiểm tra lại `export.template_metadata_file` trong config.",
-            )
-        )
-        result.target_paths[target.id] = target_paths
-        return
 
     try:
-        raw_template = load_json_file(template_metadata_file)
-        template_metadata = TemplateMetadata.model_validate(raw_template)
-    except (OSError, JSONDecodeError, ValueError, ValidationError) as error:
-        result.issues.append(_template_load_issue(target.id, template_metadata_file, error))
+        loaded_template = load_target_template(target, template_pptx_file)
+    except TemplateLoadError as error:
+        result.issues.append(_template_load_issue(target.id, error))
         result.target_paths[target.id] = target_paths
         return
 
-    template_pptx = resolve_relative_to_file(
-        template_metadata_file,
-        template_metadata.template_pptx,
-    )
-    target_paths = ResolvedTargetPaths(
-        target_id=target.id,
-        geojson_file=geojson_file,
-        template_metadata_file=template_metadata_file,
-        template_pptx=template_pptx,
-    )
-    result.template_metadata[target.id] = template_metadata.model_copy(
-        update={"template_pptx": str(template_pptx)}
-    )
-
-    if not template_pptx.is_file():
-        result.issues.append(
-            _target_issue(
-                "target.template_pptx_missing",
-                target.id,
-                f"Không tìm thấy PPTX template của target `{target.id}`: {template_pptx}",
-                "Kiểm tra `template_pptx` trong template metadata; "
-                "đường dẫn tính từ metadata file.",
-            )
-        )
-
+    result.template_metadata[target.id] = loaded_template.metadata
+    result.loaded_templates[target.id] = loaded_template
+    target.metadata["template_metadata"] = loaded_template.metadata.model_dump(mode="json")
     result.target_paths[target.id] = target_paths
 
 
@@ -248,15 +227,17 @@ def _remediation_for_field_path(field_path: str) -> str:
         return "`scale` phải là mẫu số tỷ lệ bản đồ dương, ví dụ `50000`."
     if "grid.interval" in field_path:
         return "`grid.interval` phải là cấu hình DMS hợp lệ và lớn hơn 0."
-    if "template_metadata_file" in field_path:
-        return "Khai báo `export.template_metadata_file` trỏ tới file metadata JSON của target."
+    if "template_pptx_file" in field_path:
+        return "Khai báo `export.template_pptx_file` trỏ tới PPTX template một slide của target."
+    if "placeholders" in field_path:
+        return "Khai báo `export.placeholders` với `element_id` là shape id trong PPTX template."
     return "Kiểm tra giá trị và kiểu dữ liệu của trường này trong config JSON."
 
 
-def _template_load_issue(target_id: str, template_metadata_file: Path, error: Any) -> Issue:
+def _template_load_issue(target_id: str, error: TemplateLoadError) -> Issue:
     return _target_issue(
-        "target.template_metadata_invalid",
+        error.issue_id,
         target_id,
-        f"Template metadata của target `{target_id}` không hợp lệ: {template_metadata_file}",
-        f"Sửa file template metadata. Chi tiết kỹ thuật: {error}",
+        error.message,
+        error.remediation,
     )

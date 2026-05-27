@@ -204,6 +204,27 @@ class WorkspaceService:
         self.write_composition(updated)
         return updated
 
+    def record_final_render_artifacts(
+        self,
+        composition_id: str,
+        *,
+        final_render_path: str,
+        render_log_path: str,
+    ) -> Composition:
+        """Persist workspace-relative final PNG and render-log references."""
+        final_render_path = _validate_render_artifact_path(final_render_path)
+        render_log_path = _validate_render_artifact_path(render_log_path)
+        composition = self.read_composition(composition_id)
+        artifacts = composition.artifacts.model_copy(
+            update={
+                "final_render_path": final_render_path,
+                "render_log_path": render_log_path,
+            }
+        )
+        updated = _validated_composition_update(composition, {"artifacts": artifacts})
+        self.write_composition(updated)
+        return updated
+
     def mark_needs_revalidation(self, composition_id: str) -> Composition:
         """Mark a composition stale after layer/view/grid/metadata edits."""
         composition = self.read_composition(composition_id)
@@ -624,12 +645,31 @@ def _validated_composition_update(
 
 
 def _mark_composition_edit_stale(composition: Composition) -> Composition:
+    artifacts = composition.artifacts.model_copy(
+        update={
+            "final_render_path": None,
+            "render_log_path": None,
+        }
+    )
     return _validated_composition_update(
         composition,
         {
+            "artifacts": artifacts,
             "needs_revalidation": True,
             "ready": False,
             "include": False,
             "review_order": None,
         },
     )
+
+
+def _validate_render_artifact_path(value: str) -> str:
+    path = Path(value)
+    if path.is_absolute() or ".." in path.parts:
+        msg = f"Render artifact path must stay workspace-relative: {value!r}"
+        raise WorkspaceError(msg)
+    normalized = path.as_posix()
+    if not normalized.startswith("renders/"):
+        msg = f"Render artifact path must be under renders/: {value!r}"
+        raise WorkspaceError(msg)
+    return normalized

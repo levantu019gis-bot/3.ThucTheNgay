@@ -172,16 +172,16 @@ def _template_issues(context: ValidationContext) -> Iterable[Issue]:
             ),
         )
 
-    if not getattr(context.target.export, "template_metadata_file", ""):
+    if not getattr(context.target.export, "template_pptx_file", ""):
         return (
             Issue(
-                issue_id="template.metadata_path_missing",
+                issue_id="template.pptx_path_missing",
                 severity=IssueSeverity.ERROR,
                 scope=IssueScope.TEMPLATE,
                 target_id=context.target.id,
                 composition_id=composition_id,
-                message="Target chưa cấu hình file template metadata.",
-                remediation="Bổ sung template_metadata_file hoặc sửa cấu hình export của target.",
+                message="Target chưa cấu hình PPTX template.",
+                remediation="Bổ sung `export.template_pptx_file` trỏ tới PPTX template một slide.",
             ),
         )
 
@@ -193,8 +193,10 @@ def _template_issues(context: ValidationContext) -> Iterable[Issue]:
                 scope=IssueScope.TEMPLATE,
                 target_id=context.target.id,
                 composition_id=composition_id,
-                message="Template metadata của target không hợp lệ.",
-                remediation="Sửa file template metadata hoặc PPTX tham chiếu rồi validate lại.",
+                message="PPTX template hoặc mapping element id của target không hợp lệ.",
+                remediation=(
+                    "Sửa `export.template_pptx_file` hoặc `export.placeholders` rồi validate lại."
+                ),
             ),
         )
 
@@ -206,8 +208,8 @@ def _template_issues(context: ValidationContext) -> Iterable[Issue]:
                 scope=IssueScope.TEMPLATE,
                 target_id=context.target.id,
                 composition_id=composition_id,
-                message="Chưa có template metadata đã parse cho target.",
-                remediation="Nạp template metadata của target trước khi ready/export.",
+                message="Chưa có metadata PPTX đã parse cho target.",
+                remediation="Nạp PPTX template của target trước khi ready/export.",
             ),
         )
 
@@ -229,8 +231,10 @@ def _map_frame_issues(
             scope=IssueScope.TEMPLATE,
             target_id=target_id,
             composition_id=composition_id,
-            message="Map frame trong template metadata không hợp lệ.",
-            remediation="Sửa map_frame trong template metadata để có vị trí và kích thước hợp lệ.",
+            message="Map frame trong PPTX template không hợp lệ.",
+            remediation=(
+                "Sửa shape map image trong PPTX template để có vị trí và kích thước hợp lệ."
+            ),
         ),
     )
 

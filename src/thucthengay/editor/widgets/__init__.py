@@ -1,10 +1,12 @@
 """Editor widget package."""
 
+from thucthengay.editor.widgets.export_summary import ExportSummaryWidget
 from thucthengay.editor.widgets.gis_canvas import (
     GisCanvasState,
     GisCanvasWidget,
     RenderRequestToken,
 )
+from thucthengay.editor.widgets.ingestion_progress import IngestionProgressWidget
 from thucthengay.editor.widgets.ingestion_summary import IngestionSummaryWidget
 from thucthengay.editor.widgets.metadata_editor import (
     MetadataEditorDialog,
@@ -21,6 +23,8 @@ from thucthengay.editor.widgets.warnings_panel import WarningsPanelWidget
 __all__ = [
     "GisCanvasState",
     "GisCanvasWidget",
+    "ExportSummaryWidget",
+    "IngestionProgressWidget",
     "IngestionSummaryWidget",
     "MetadataEditorDialog",
     "PreviewRequestToken",

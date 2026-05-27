@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from types import MethodType
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
 
+from thucthengay.config import ConfigLoadResult
+from thucthengay.editor.app_shell import AppShell
 from thucthengay.editor.modes.setup_mode import SetupMode
 from thucthengay.editor.widgets.path_picker import (
     PathKind,
@@ -14,6 +17,9 @@ from thucthengay.editor.widgets.path_picker import (
     PathStatus,
     validate_selected_path,
 )
+from thucthengay.jobs import IngestionJobResult, JobState, ProgressEvent
+from thucthengay.models import GridConfig, GridInterval, TargetConfig
+from thucthengay.workspace import WorkspaceService
 
 
 def qapp() -> QApplication:
@@ -126,3 +132,186 @@ def test_setup_mode_requires_confirmation_before_ingest_with_existing_workspace_
 
     assert confirmed_plans
     assert emitted == []
+
+
+def test_setup_mode_shows_live_ingestion_progress_and_locks_action(tmp_path: Path) -> None:
+    qapp()
+    config_file = tmp_path / "project.json"
+    config_file.write_text("{}", encoding="utf-8")
+    imagery_folder = tmp_path / "imagery"
+    imagery_folder.mkdir()
+    workspace_folder = tmp_path / "workspace"
+    workspace_folder.mkdir()
+
+    setup = SetupMode()
+    setup.config_row.set_path(config_file)
+    setup.imagery_row.set_path(imagery_folder)
+    setup.workspace_row.set_path(workspace_folder)
+    assert setup.ingest_button.isEnabled()
+
+    setup.start_ingestion_progress()
+    assert not setup.progress_widget.isHidden()
+    assert not setup.ingest_button.isEnabled()
+
+    setup.show_ingestion_progress(
+        ProgressEvent(
+            job_id="job",
+            stage="scan",
+            current=2,
+            total=5,
+            message="Đang scan ảnh.",
+            scanned_file_count=2,
+            total_image_count=5,
+            scanned_image_count=1,
+        )
+    )
+    assert setup.progress_widget.image_progress.value() == 2
+    assert setup.progress_widget.image_progress.maximum() == 5
+    assert setup.progress_widget.image_count_label.text() == "Ảnh đã scan: 2/5 (hợp lệ: 1)"
+
+    setup.show_ingestion_progress(
+        ProgressEvent(
+            job_id="job",
+            stage="match",
+            current=1,
+            total=3,
+            message="Đang scan target Alpha.",
+            processed_target_count=1,
+            total_target_count=3,
+            current_target_id="alpha",
+            current_target_name="Alpha",
+            current_target_matched_count=4,
+        )
+    )
+    assert setup.progress_widget.target_progress.value() == 1
+    assert setup.progress_widget.target_progress.maximum() == 3
+    assert setup.progress_widget.target_count_label.text() == "Target đã scan: 1/3"
+    assert setup.progress_widget.current_target_label.text() == (
+        "Target hiện tại: Alpha - đã lấy 4 ảnh"
+    )
+
+    setup.show_ingestion_progress(
+        ProgressEvent(job_id="job", stage="complete", state=JobState.SUCCESS, message="Xong.")
+    )
+    assert setup.ingest_button.isEnabled()
+
+
+def test_app_shell_runs_ingestion_when_setup_requests_it(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    qapp()
+    config_file = tmp_path / "project.json"
+    config_file.write_text("{}", encoding="utf-8")
+    imagery_folder = tmp_path / "imagery"
+    imagery_folder.mkdir()
+    workspace_folder = tmp_path / "workspace"
+    workspace_folder.mkdir()
+    target = TargetConfig(
+        id="alpha",
+        name="Alpha",
+        geojson_file="alpha.geojson",
+        coordinate=[106.7, 10.8],
+        scale=50000,
+        grid=GridConfig(interval=GridInterval(minutes=1)),
+        export={"template_pptx_file": "alpha.pptx"},
+    )
+    config_result = ConfigLoadResult(
+        config_path=config_file.resolve(),
+        enabled_targets=[target],
+    )
+    calls: dict[str, object] = {}
+
+    def fake_load_project_config(path: Path) -> ConfigLoadResult:
+        calls["config_path"] = path
+        return config_result
+
+    def fake_run_ingestion_job(**kwargs) -> IngestionJobResult:
+        calls["job_kwargs"] = kwargs
+        kwargs["publish"](
+            ProgressEvent(
+                job_id=kwargs["job_id"],
+                stage="scan",
+                current=1,
+                total=2,
+                message="Đang scan ảnh.",
+                scanned_file_count=1,
+                total_image_count=2,
+                scanned_image_count=1,
+            )
+        )
+        kwargs["publish"](
+            ProgressEvent(
+                job_id=kwargs["job_id"],
+                stage="match",
+                current=1,
+                total=1,
+                message="Đang scan target Alpha.",
+                scanned_file_count=1,
+                total_image_count=2,
+                scanned_image_count=1,
+                processed_target_count=1,
+                total_target_count=1,
+                current_target_id="alpha",
+                current_target_name="Alpha",
+                current_target_matched_count=1,
+            )
+        )
+        return IngestionJobResult(
+            job_id=kwargs["job_id"],
+            state=JobState.SUCCESS,
+            issues=[],
+            scanned_image_count=1,
+            matched_image_count=1,
+            targets_with_images_count=1,
+            composition_ids=["alpha__20260525"],
+        )
+
+    monkeypatch.setattr(
+        "thucthengay.editor.app_shell.load_project_config",
+        fake_load_project_config,
+    )
+    monkeypatch.setattr(
+        "thucthengay.editor.app_shell.run_ingestion_job",
+        fake_run_ingestion_job,
+    )
+
+    shell = AppShell()
+    loaded_modes: list[tuple[str, WorkspaceService, list[TargetConfig] | None]] = []
+
+    def capture_review_load(self, service, *, targets=None) -> None:
+        loaded_modes.append(("review", service, targets))
+
+    def capture_export_load(self, service, *, targets=None) -> None:
+        loaded_modes.append(("export", service, targets))
+
+    shell.review_edit_mode.load_workspace = MethodType(
+        capture_review_load,
+        shell.review_edit_mode,
+    )
+    shell.export_mode.load_workspace = MethodType(
+        capture_export_load,
+        shell.export_mode,
+    )
+    shell.setup_mode.config_row.set_path(config_file)
+    shell.setup_mode.imagery_row.set_path(imagery_folder)
+    shell.setup_mode.workspace_row.set_path(workspace_folder)
+
+    shell.setup_mode.ingest_button.click()
+
+    assert calls["config_path"] == config_file.resolve()
+    job_kwargs = calls["job_kwargs"]
+    assert job_kwargs["config_result"] is config_result
+    assert job_kwargs["imagery_folder"] == imagery_folder.resolve()
+    assert job_kwargs["workspace_service"].paths.root == workspace_folder.resolve()
+    assert callable(job_kwargs["publish"])
+    assert shell.setup_mode.progress_widget.image_count_label.text() == (
+        "Ảnh đã scan: 1/2 (hợp lệ: 1)"
+    )
+    assert shell.setup_mode.progress_widget.target_count_label.text() == "Target đã scan: 1/1"
+    assert shell.setup_mode.summary_widget.scanned_label.text() == "1"
+    assert loaded_modes == [
+        ("review", job_kwargs["workspace_service"], [target]),
+        ("export", job_kwargs["workspace_service"], [target]),
+    ]
+    assert shell.mode_tabs.currentWidget() is shell.review_edit_mode

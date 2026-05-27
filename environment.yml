@@ -1,15 +1,30 @@
 name: ttn-env
 channels:
   - conda-forge
+  - nodefaults
 dependencies:
-  - python=3.11
+  - python>=3.11,<3.12
+  - pip
+
+  # Runtime UI and data models
   - pyside6>=6.7
   - pydantic>=2.7
-  - rasterio>=1.3
-  - shapely>=2.0
-  - pyproj>=3.6
+
+  # GIS and raster stack
   - gdal>=3.7
+  - rasterio>=1.3
+  - pyproj>=3.6
+  - shapely>=2.0
+  - affine
   - numpy>=1.26
+
+  # Rendering and report/template helpers
+  - pillow>=10.0
   - python-pptx>=1.0
   - lxml>=6.1
-  - pillow>=12.2
+
+  # Development and packaging tools
+  - pytest>=8.0
+  - ruff>=0.4
+  - uv
+  - hatchling

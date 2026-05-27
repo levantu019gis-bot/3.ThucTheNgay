@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from json import JSONDecodeError
 from pathlib import Path
@@ -46,17 +47,23 @@ class TargetMatchingResult:
     issues: list[Issue]
 
 
+TargetMatchProgressCallback = Callable[[int, int, TargetConfig, int], None]
+
+
 def match_imagery_to_targets(
     images: list[ScannedGeoTiff],
     config_result: ConfigLoadResult,
+    *,
+    on_target_progress: TargetMatchProgressCallback | None = None,
 ) -> TargetMatchingResult:
     """Match valid scanned GeoTIFFs to enabled target boundaries."""
     matches: dict[str, list[ImageryTargetMatch]] = {
         target.id: [] for target in config_result.enabled_targets
     }
     issues: list[Issue] = []
+    total_targets = len(config_result.enabled_targets)
 
-    for target in config_result.enabled_targets:
+    for target_index, target in enumerate(config_result.enabled_targets, start=1):
         target_paths = config_result.target_paths.get(target.id)
         if target_paths is None:
             issues.append(
@@ -67,13 +74,19 @@ def match_imagery_to_targets(
                     "Tải lại config và kiểm tra `geojson_file` của target.",
                 )
             )
+            if on_target_progress is not None:
+                on_target_progress(target_index, total_targets, target, 0)
             continue
 
         boundary, issue = load_target_boundary(target, target_paths.geojson_file)
         if issue is not None:
             issues.append(issue)
+            if on_target_progress is not None:
+                on_target_progress(target_index, total_targets, target, 0)
             continue
         if boundary is None:
+            if on_target_progress is not None:
+                on_target_progress(target_index, total_targets, target, 0)
             continue
 
         for image in images:
@@ -85,6 +98,13 @@ def match_imagery_to_targets(
                 matches[target.id].append(
                     ImageryTargetMatch(target_id=target.id, image=image)
                 )
+        if on_target_progress is not None:
+            on_target_progress(
+                target_index,
+                total_targets,
+                target,
+                len(matches[target.id]),
+            )
 
     return TargetMatchingResult(matches=matches, issues=issues)
 

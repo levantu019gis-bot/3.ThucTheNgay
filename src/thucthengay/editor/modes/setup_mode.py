@@ -8,10 +8,11 @@ from pathlib import Path
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QFormLayout, QPushButton, QVBoxLayout, QWidget
 
+from thucthengay.editor.widgets.ingestion_progress import IngestionProgressWidget
 from thucthengay.editor.widgets.ingestion_summary import IngestionSummaryWidget
 from thucthengay.editor.widgets.path_picker import PathKind, PathPickerRow
 from thucthengay.editor.widgets.workspace_confirmation import confirm_workspace_clear
-from thucthengay.jobs import IngestionSummary
+from thucthengay.jobs import IngestionSummary, ProgressEvent
 from thucthengay.workspace import WorkspaceService
 
 
@@ -36,7 +37,9 @@ class SetupMode(QWidget):
         self.workspace_row = PathPickerRow("Workspace", PathKind.WORKSPACE_FOLDER)
         self.ingest_button = QPushButton("Lấy dữ liệu")
         self.ingest_button.setObjectName("setupIngestButton")
+        self.progress_widget = IngestionProgressWidget()
         self.summary_widget = IngestionSummaryWidget()
+        self._ingestion_running = False
 
         form = QFormLayout()
         form.setContentsMargins(0, 0, 0, 0)
@@ -49,6 +52,7 @@ class SetupMode(QWidget):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(14)
         layout.addLayout(form)
+        layout.addWidget(self.progress_widget)
         layout.addWidget(self.summary_widget)
         layout.addStretch(1)
         layout.addWidget(self.ingest_button)
@@ -87,7 +91,10 @@ class SetupMode(QWidget):
         )
 
     def _update_action_state(self, *_args: object) -> None:
-        self.ingest_button.setEnabled(self.is_ready)
+        self.ingest_button.setEnabled(self.is_ready and not self._ingestion_running)
+        if self._ingestion_running:
+            self.ingest_button.setToolTip("Đang lấy dữ liệu.")
+            return
         if self.is_ready:
             self.ingest_button.setToolTip("Sẵn sàng lấy dữ liệu.")
             return
@@ -108,6 +115,21 @@ class SetupMode(QWidget):
 
         self.ingestRequested.emit(selected_paths)
 
+    def start_ingestion_progress(self) -> None:
+        """Show live progress and lock the ingest action during a run."""
+        self._ingestion_running = True
+        self.progress_widget.start()
+        self._update_action_state()
+
+    def show_ingestion_progress(self, event: ProgressEvent) -> None:
+        """Show one live ingestion progress event."""
+        self.progress_widget.apply_event(event)
+        if event.terminal:
+            self._ingestion_running = False
+            self._update_action_state()
+
     def show_ingestion_summary(self, summary: IngestionSummary) -> None:
         """Show the latest ingestion summary in Setup mode."""
+        self._ingestion_running = False
+        self._update_action_state()
         self.summary_widget.show_summary(summary)

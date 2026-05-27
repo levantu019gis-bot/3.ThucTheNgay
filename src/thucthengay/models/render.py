@@ -2,9 +2,19 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from enum import StrEnum
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from thucthengay.models.issue import Issue
+
+
+class FinalRenderStatus(StrEnum):
+    """Terminal state recorded for a final PNG render attempt."""
+
+    SUCCESS = "success"
+    FAILURE = "failure"
 
 
 class RenderResult(BaseModel):
@@ -35,3 +45,55 @@ class RenderResult(BaseModel):
             msg = "center latitude must be between -90 and 90"
             raise ValueError(msg)
         return value
+
+
+class FinalRenderLogEntry(BaseModel):
+    """Trace entry for one final PNG render attempt."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    composition_id: str
+    target_id: str
+    status: FinalRenderStatus
+    output_path: str | None = None
+    width: int | None = Field(default=None, gt=0)
+    height: int | None = Field(default=None, gt=0)
+    render_spec_hash: str
+    visible_layer_refs: list[str] = Field(default_factory=list)
+    timestamp: datetime
+    failure_reason: str | None = None
+    issues: list[Issue] = Field(default_factory=list)
+
+
+class FinalRenderLog(BaseModel):
+    """JSON file persisted beside final render PNGs."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    entries: list[FinalRenderLogEntry] = Field(default_factory=list)
+
+
+class FinalRenderResult(BaseModel):
+    """Structured outcome returned by final PNG rendering."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    composition_id: str
+    target_id: str
+    status: FinalRenderStatus
+    output_path: str | None = None
+    log_path: str
+    width: int | None = Field(default=None, gt=0)
+    height: int | None = Field(default=None, gt=0)
+    render_spec_hash: str
+    failure_reason: str | None = None
+    issues: list[Issue] = Field(default_factory=list)
+
+
+class FinalRenderCurrentness(BaseModel):
+    """Reasoned answer for whether an existing final render matches a spec."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    current: bool
+    reason: str | None = None

@@ -9,9 +9,12 @@ from thucthengay.validation.composition_rules import validate_composition_readin
 from thucthengay.validation.service import ValidationContext, ValidationResult
 
 
-def validate_export_preflight(contexts: Iterable[ValidationContext]) -> ValidationResult:
+def validate_export_preflight(
+    contexts: Iterable[ValidationContext],
+    template_issues: Iterable[Issue] = (),
+) -> ValidationResult:
     """Recompute readiness validation for export candidate contexts."""
-    issues: list[Issue] = []
+    issues: list[Issue] = list(template_issues)
     for context in contexts:
         issues.extend(validate_composition_readiness(context).issues)
     return ValidationResult.from_issues(issues)
