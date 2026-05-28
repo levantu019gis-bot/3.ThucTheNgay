@@ -82,6 +82,34 @@ def test_write_composition_is_atomic_and_registers_manifest_id(tmp_path: Path) -
     assert service.read_composition("target_001__20260525").capture_date == date(2026, 5, 25)
 
 
+def test_resolve_composition_layer_paths_keeps_json_relative_but_returns_absolute(
+    tmp_path: Path,
+) -> None:
+    service = WorkspaceService(tmp_path / "workspace")
+    service.initialize(config_path="config.json")
+    composition = valid_composition().model_copy(
+        update={
+            "layers": [
+                ImageLayer(
+                    layer_id="L1",
+                    source_path="imagery/L1.tif",
+                    cache_path="cache/target/L1.tif",
+                    order=0,
+                    metadata_status=MetadataStatus.VALID,
+                )
+            ]
+        }
+    )
+
+    resolved = service.resolve_composition_layer_paths(composition)
+
+    assert composition.layers[0].cache_path == "cache/target/L1.tif"
+    assert resolved.layers[0].source_path == str((service.paths.root / "imagery/L1.tif").resolve())
+    assert resolved.layers[0].cache_path == str(
+        (service.paths.root / "cache/target/L1.tif").resolve()
+    )
+
+
 def test_atomic_write_failure_keeps_existing_final_json(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

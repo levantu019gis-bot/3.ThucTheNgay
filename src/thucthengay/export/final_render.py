@@ -126,9 +126,10 @@ def final_render_currentness_issue(
     if target is None:
         return None
 
+    render_composition = workspace_service.resolve_composition_layer_paths(composition)
     try:
         spec = build_export_final_render_spec(
-            composition,
+            render_composition,
             target,
             final_dpi=final_dpi,
         )
@@ -192,9 +193,10 @@ def _ensure_composition_final_render(
             ],
         )
 
+    render_composition = workspace_service.resolve_composition_layer_paths(composition)
     try:
         spec = build_export_final_render_spec(
-            composition,
+            render_composition,
             target,
             final_dpi=final_dpi,
         )

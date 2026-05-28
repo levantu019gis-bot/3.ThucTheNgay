@@ -585,14 +585,17 @@ class ReviewEditMode(QWidget):
         target = self._target_for_composition(composition)
         if target is None:
             return
+        if self._workspace_service is None:
+            return
         context = self._validation_context_for(composition)
         if context.template_metadata is None:
             return
+        render_composition = self._workspace_service.resolve_composition_layer_paths(composition)
         canvas_width = max(self.gis_canvas.viewport().width(), 640)
         canvas_height = max(self.gis_canvas.viewport().height(), 360)
         try:
             spec = build_render_spec(
-                composition=composition,
+                composition=render_composition,
                 target=target,
                 template=context.template_metadata,
                 template_metadata_file=target.export.template_metadata_file,

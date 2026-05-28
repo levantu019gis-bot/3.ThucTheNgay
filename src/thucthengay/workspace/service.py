@@ -159,6 +159,23 @@ class WorkspaceService:
             for composition_id in manifest.composition_ids
         ]
 
+    def resolve_composition_layer_paths(self, composition: Composition) -> Composition:
+        """Return a transient composition whose relative layer paths are workspace-rooted."""
+        resolved_layers = [
+            layer.model_copy(
+                update={
+                    "source_path": self._resolve_layer_path(layer.source_path),
+                    "cache_path": (
+                        self._resolve_layer_path(layer.cache_path)
+                        if layer.cache_path is not None
+                        else None
+                    ),
+                }
+            )
+            for layer in composition.layers
+        ]
+        return composition.model_copy(update={"layers": resolved_layers})
+
     def update_review_state(
         self,
         composition_id: str,
@@ -609,6 +626,12 @@ class WorkspaceService:
         self.paths.root.mkdir(parents=True, exist_ok=True)
         for directory in self.paths.app_owned_dirs:
             directory.mkdir(parents=True, exist_ok=True)
+
+    def _resolve_layer_path(self, value: str) -> str:
+        path = Path(value).expanduser()
+        if path.is_absolute():
+            return str(path)
+        return str((self.paths.root / path).resolve())
 
     def _next_review_order(self) -> int:
         existing_orders = [

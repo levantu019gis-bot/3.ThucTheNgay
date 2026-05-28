@@ -1,0 +1,94 @@
+{
+  "artifacts": {
+    "export_log_path": null,
+    "final_render_path": null,
+    "preview_render_path": null,
+    "render_log_path": null
+  },
+  "capture_date": "2026-05-26",
+  "composition_id": "DaBac__20260526",
+  "grid_override": null,
+  "include": false,
+  "layers": [
+    {
+      "cache_path": "cache/DaBac/20260526/PSScene_20260526_030843_51_2560_cloud_0__8bd7e64830ec.tif",
+      "capture_date": "2026-05-26",
+      "capture_time": "03:08:43",
+      "cloud_percent": 0.0,
+      "layer_id": "PSScene_20260526_030843_51_2560_cloud_0__8bd7e64830ec",
+      "metadata_source": "filename",
+      "metadata_status": "valid",
+      "order": 0,
+      "source_path": "D:\\TU_KXOA\\5.TTN\\gis_ttn\\examples\\20260526\\PSScene_20260526_030843_51_2560_cloud_0.tif",
+      "visible": true
+    },
+    {
+      "cache_path": "cache/DaBac/20260526/PSScene_20260526_030841_15_2560_cloud_0__a0b80dea9df9.tif",
+      "capture_date": "2026-05-26",
+      "capture_time": "03:08:41",
+      "cloud_percent": 0.0,
+      "layer_id": "PSScene_20260526_030841_15_2560_cloud_0__a0b80dea9df9",
+      "metadata_source": "filename",
+      "metadata_status": "valid",
+      "order": 1,
+      "source_path": "D:\\TU_KXOA\\5.TTN\\gis_ttn\\examples\\20260526\\PSScene_20260526_030841_15_2560_cloud_0.tif",
+      "visible": true
+    },
+    {
+      "cache_path": "cache/DaBac/20260526/PSScene_20260526_030632_75_2575_cloud_0__30eb66637c9a.tif",
+      "capture_date": "2026-05-26",
+      "capture_time": "03:06:32",
+      "cloud_percent": 0.0,
+      "layer_id": "PSScene_20260526_030632_75_2575_cloud_0__30eb66637c9a",
+      "metadata_source": "filename",
+      "metadata_status": "valid",
+      "order": 2,
+      "source_path": "D:\\TU_KXOA\\5.TTN\\gis_ttn\\examples\\20260526\\PSScene_20260526_030632_75_2575_cloud_0.tif",
+      "visible": true
+    },
+    {
+      "cache_path": "cache/DaBac/20260526/PSScene_20260526_030630_39_2575_cloud_0__23279b054ab9.tif",
+      "capture_date": "2026-05-26",
+      "capture_time": "03:06:30",
+      "cloud_percent": 0.0,
+      "layer_id": "PSScene_20260526_030630_39_2575_cloud_0__23279b054ab9",
+      "metadata_source": "filename",
+      "metadata_status": "valid",
+      "order": 3,
+      "source_path": "D:\\TU_KXOA\\5.TTN\\gis_ttn\\examples\\20260526\\PSScene_20260526_030630_39_2575_cloud_0.tif",
+      "visible": true
+    },
+    {
+      "cache_path": "cache/DaBac/20260526/PSScene_20260526_030628_02_2575_cloud_0__8921ca868627.tif",
+      "capture_date": "2026-05-26",
+      "capture_time": "03:06:28",
+      "cloud_percent": 0.0,
+      "layer_id": "PSScene_20260526_030628_02_2575_cloud_0__8921ca868627",
+      "metadata_source": "filename",
+      "metadata_status": "valid",
+      "order": 4,
+      "source_path": "D:\\TU_KXOA\\5.TTN\\gis_ttn\\examples\\20260526\\PSScene_20260526_030628_02_2575_cloud_0.tif",
+      "visible": true
+    }
+  ],
+  "needs_revalidation": true,
+  "notes": "",
+  "ready": false,
+  "review_order": null,
+  "reviewed": false,
+  "target_id": "DaBac",
+  "validation_summary": {
+    "error_count": 0,
+    "info_count": 0,
+    "last_validated_at": null,
+    "warning_count": 0
+  },
+  "view": {
+    "center": [
+      111.51541471,
+      17.10417176
+    ],
+    "rotation": 0,
+    "scale": 50000
+  }
+}

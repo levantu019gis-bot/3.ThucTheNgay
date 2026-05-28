@@ -1,5 +1,15 @@
 {
   "schema_version": "1.0",
+  "filename_patterns": [
+    {
+      "name": "PlanetScope PSScene",
+      "pattern": "*_yyyyMMdd_HHmmss_*_*_cloud_cloud-percent"
+    },
+    {
+      "name": "PlanetScope simple",
+      "pattern": "yyyyMMdd_HHmmss_*"
+    }
+  ],
   "targets": [
     {
       "id": "DaBac",

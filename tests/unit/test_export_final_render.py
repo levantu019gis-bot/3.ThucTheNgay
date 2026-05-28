@@ -136,6 +136,22 @@ def test_export_final_render_generates_missing_and_persists_workspace_artifacts(
     assert persisted.artifacts.render_log_path == row.render_log_path
 
 
+def test_export_final_render_resolves_workspace_relative_layer_paths(
+    tmp_path: Path,
+) -> None:
+    service = _workspace(tmp_path, _composition())
+    captured_cache_paths: list[str | None] = []
+
+    def capture_render(spec: RenderSpec, is_cancelled=None) -> RasterRenderResult:
+        captured_cache_paths.extend(layer.cache_path for layer in spec.visible_layers)
+        return _success_render(spec, is_cancelled=is_cancelled)
+
+    result = ensure_final_renders_for_export(service, [_target()], render=capture_render)
+
+    assert result.summary.rendered_count == 1
+    assert captured_cache_paths == [str((service.paths.root / "cache/L1.tif").resolve())]
+
+
 def test_export_final_render_skips_current_render_without_calling_renderer(
     tmp_path: Path,
 ) -> None:

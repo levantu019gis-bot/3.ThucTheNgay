@@ -1,0 +1,58 @@
+{
+  "artifacts": {
+    "export_log_path": null,
+    "final_render_path": null,
+    "preview_render_path": null,
+    "render_log_path": null
+  },
+  "capture_date": "2026-05-26",
+  "composition_id": "DaHoangSa__20260526",
+  "grid_override": null,
+  "include": false,
+  "layers": [
+    {
+      "cache_path": "cache/DaHoangSa/20260526/PSScene_20260526_030639_84_2575_cloud_0__0ebf5181c66d.tif",
+      "capture_date": "2026-05-26",
+      "capture_time": "03:06:39",
+      "cloud_percent": 0.0,
+      "layer_id": "PSScene_20260526_030639_84_2575_cloud_0__0ebf5181c66d",
+      "metadata_source": "filename",
+      "metadata_status": "valid",
+      "order": 0,
+      "source_path": "D:\\TU_KXOA\\5.TTN\\gis_ttn\\examples\\20260526\\PSScene_20260526_030639_84_2575_cloud_0.tif",
+      "visible": true
+    },
+    {
+      "cache_path": "cache/DaHoangSa/20260526/PSScene_20260526_030637_48_2575_cloud_0__4fe1b581910b.tif",
+      "capture_date": "2026-05-26",
+      "capture_time": "03:06:37",
+      "cloud_percent": 0.0,
+      "layer_id": "PSScene_20260526_030637_48_2575_cloud_0__4fe1b581910b",
+      "metadata_source": "filename",
+      "metadata_status": "valid",
+      "order": 1,
+      "source_path": "D:\\TU_KXOA\\5.TTN\\gis_ttn\\examples\\20260526\\PSScene_20260526_030637_48_2575_cloud_0.tif",
+      "visible": true
+    }
+  ],
+  "needs_revalidation": true,
+  "notes": "",
+  "ready": false,
+  "review_order": null,
+  "reviewed": false,
+  "target_id": "DaHoangSa",
+  "validation_summary": {
+    "error_count": 0,
+    "info_count": 0,
+    "last_validated_at": null,
+    "warning_count": 0
+  },
+  "view": {
+    "center": [
+      111.60772314584855,
+      16.533066414384205
+    ],
+    "rotation": 0,
+    "scale": 50000
+  }
+}
