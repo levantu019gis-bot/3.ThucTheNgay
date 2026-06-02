@@ -5,6 +5,8 @@ import os
 from datetime import date, time
 from pathlib import Path
 
+import numpy as np
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
@@ -35,6 +37,8 @@ from thucthengay.editor.widgets import (
     GisCanvasWidget,
     SlidePreviewState,
     SlidePreviewWidget,
+    TargetPreviewState,
+    TargetPreviewWidget,
 )
 from thucthengay.jobs import JobState, PreviewRenderController, PreviewRenderJobResult
 from thucthengay.models import (
@@ -300,6 +304,7 @@ def test_review_edit_mode_loads_selected_composition_through_workspace_service(
     )
 
     mode = ReviewEditMode()
+    mode._request_canvas_render = lambda _composition: None  # noqa: SLF001
     target = target_config("alpha", sort_order=1, name="Alpha Target").model_copy(
         update={"metadata": {"map_frame": {"width": 4, "height": 3}}}
     )
@@ -461,6 +466,9 @@ def test_gis_canvas_states_fixed_frame_and_stale_render_guard() -> None:
     assert canvas.state() == GisCanvasState.READY
     assert "Canvas đã tải" in canvas.state_text()
     assert abs(canvas.frame_aspect() - GisCanvasWidget.DEFAULT_FRAME_ASPECT) < 0.02
+    frame = canvas._frame_rect()  # noqa: SLF001
+    viewport_width = max(canvas.viewport().width(), 640)
+    assert abs(frame.width() / viewport_width - GisCanvasWidget.MAP_FRAME_FILL_RATIO) < 0.02
 
     old_token = canvas.begin_render_request()
     old_generation = canvas.generation
@@ -705,6 +713,62 @@ def test_slide_preview_job_failure_sets_recoverable_render_error() -> None:
     assert "Kiem tra raster" in preview.detail_text()
 
 
+def test_target_preview_applies_render_canvas_and_rejects_stale_results() -> None:
+    qapp()
+    preview = TargetPreviewWidget()
+    selected = composition(
+        "alpha__20260525",
+        "alpha",
+        date(2026, 5, 25),
+        needs_revalidation=False,
+    )
+
+    assert preview.set_composition(selected) is True
+    stale_token = preview.begin_render_request()
+    updated = composition(
+        "beta__20260525",
+        "beta",
+        date(2026, 5, 25),
+        needs_revalidation=False,
+    )
+    assert preview.set_composition(updated) is True
+
+    canvas = np.full((16, 24, 3), 128, dtype=np.uint8)
+    assert preview.apply_render_result(stale_token, "old", canvas=canvas) is False
+
+    current_token = preview.set_loading()
+    assert preview.apply_render_result(current_token, "done", canvas=canvas) is True
+    assert preview.state() == TargetPreviewState.RENDERED
+    assert "Target Preview đã cập nhật" in preview.state_text()
+    assert "beta" in preview.detail_text()
+
+
+def test_target_preview_stays_fixed_for_same_target_day_view_changes() -> None:
+    qapp()
+    preview = TargetPreviewWidget()
+    selected = composition(
+        "alpha__20260525",
+        "alpha",
+        date(2026, 5, 25),
+        needs_revalidation=False,
+    )
+    assert preview.set_composition(selected) is True
+    token = preview.set_loading()
+    preview.apply_render_result(
+        token,
+        "done",
+        canvas=np.full((12, 12, 3), 80, dtype=np.uint8),
+    )
+
+    changed_view = selected.model_copy(
+        update={"view": ViewState(center=[106.8, 10.9], scale=25000)}
+    )
+
+    assert preview.set_composition(changed_view) is False
+    assert preview.state() == TargetPreviewState.RENDERED
+    assert "Scale 1:25,000" not in preview.detail_text()
+
+
 def test_review_edit_layer_stack_saves_visibility_order_and_warning(
     tmp_path: Path,
 ) -> None:
@@ -819,6 +883,7 @@ def test_review_edit_gis_canvas_saves_pan_zoom_and_marks_preview_stale(
     )
 
     mode = ReviewEditMode()
+    mode._request_canvas_render = lambda _composition: None  # noqa: SLF001
     target = target_config("alpha", sort_order=1, name="Alpha Target").model_copy(
         update={"metadata": {"map_frame": {"width": 4, "height": 3}}}
     )
@@ -831,6 +896,7 @@ def test_review_edit_gis_canvas_saves_pan_zoom_and_marks_preview_stale(
     mode.tree_view.setCurrentIndex(composition_index)
 
     original_center = mode.gis_canvas.center
+    target_preview_generation = mode.target_preview.generation
     assert abs(mode.gis_canvas.frame_aspect() - (4 / 3)) < 0.02
 
     mode.gis_canvas.pan_by_pixels(48, -24)
@@ -841,8 +907,7 @@ def test_review_edit_gis_canvas_saves_pan_zoom_and_marks_preview_stale(
     assert panned.ready is False
     assert panned.include is False
     assert panned.review_order is None
-    assert "Preview cần cập nhật" in mode.preview_summary.text()
-    assert mode.slide_preview.state() == SlidePreviewState.NEEDS_UPDATE
+    assert mode.target_preview.generation == target_preview_generation
 
     mode.gis_canvas.zoom_by_factor(0.5)
 
@@ -886,6 +951,7 @@ def test_review_edit_grid_controls_show_defaults_save_override_and_mark_stale(
     mode.load_workspace(service, targets=[target])
     target_index = mode.tree_model.index(0, 0)
     mode.tree_view.setCurrentIndex(mode.tree_model.index(0, 0, target_index))
+    target_preview_generation = mode.target_preview.generation
 
     assert mode.grid_degrees_input.text() == "0"
     assert mode.grid_minutes_input.text() == "1"
@@ -910,14 +976,13 @@ def test_review_edit_grid_controls_show_defaults_save_override_and_mark_stale(
     assert reloaded.review_order is None
     assert target.grid.interval.minutes == 1
     assert "override" in mode.grid_status_label.text()
-    assert "Preview cần cập nhật" in mode.preview_summary.text()
-    assert "Grid: 0d 2m 30s" in mode.slide_preview.detail_text()
+    assert mode.target_preview.generation == target_preview_generation
     assert mode.tree_model.index_for_composition_id("alpha__20260525").data(
         CompositionTreeRole.STATUS_TEXT
     ) == "Cần kiểm tra lại"
 
 
-def test_review_edit_slide_preview_loads_and_debounces_after_selection_and_edits(
+def test_review_edit_target_preview_loads_once_and_stays_fixed_after_view_edits(
     tmp_path: Path,
 ) -> None:
     qapp()
@@ -943,32 +1008,24 @@ def test_review_edit_slide_preview_loads_and_debounces_after_selection_and_edits
     target_index = mode.tree_model.index(0, 0)
     mode.tree_view.setCurrentIndex(mode.tree_model.index(0, 0, target_index))
 
-    assert mode.slide_preview.state() == SlidePreviewState.NEEDS_UPDATE
-    assert "alpha__20260525" in mode.slide_preview.detail_text()
-    assert "Layers: alpha__20260525-layer" in mode.slide_preview.detail_text()
-    assert "#ddeeff" in mode.slide_preview.detail_text()
-
-    mode.slide_preview._timer.timeout.emit()
-
-    assert mode.slide_preview.state() == SlidePreviewState.LOADING
-    mode.slide_preview._render_timer.timeout.emit()
-
-    assert mode.slide_preview.state() == SlidePreviewState.RENDERED
-    assert "Preview đã cập nhật" in mode.preview_summary.text()
+    assert mode.target_preview.key is not None
+    assert mode.target_preview.key.target_id == "alpha"
+    assert mode.target_preview.key.capture_date == date(2026, 5, 25)
+    assert mode.target_preview.state() in {
+        TargetPreviewState.NEEDS_UPDATE,
+        TargetPreviewState.LOADING,
+        TargetPreviewState.RENDER_ERROR,
+    }
+    generation = mode.target_preview.generation
 
     mode.gis_canvas.pan_by_pixels(20, 0)
 
-    assert mode.slide_preview.state() == SlidePreviewState.NEEDS_UPDATE
-    assert "Preview cần cập nhật" in mode.preview_summary.text()
-
-    mode.slide_preview._timer.timeout.emit()
-    mode.slide_preview._render_timer.timeout.emit()
-
-    assert mode.slide_preview.state() == SlidePreviewState.RENDERED
-    assert "Scale 1:50,000" in mode.slide_preview.detail_text()
+    assert mode.target_preview.generation == generation
+    assert mode.target_preview.key is not None
+    assert mode.target_preview.key.target_id == "alpha"
 
 
-def test_review_edit_slide_preview_uses_map_background_string(
+def test_review_edit_target_preview_panel_uses_target_preview_name(
     tmp_path: Path,
 ) -> None:
     qapp()
@@ -991,7 +1048,7 @@ def test_review_edit_slide_preview_uses_map_background_string(
     target_index = mode.tree_model.index(0, 0)
     mode.tree_view.setCurrentIndex(mode.tree_model.index(0, 0, target_index))
 
-    assert "#112233" in mode.slide_preview.detail_text()
+    assert "Target Preview" in mode.preview_summary.text()
 
 
 def test_review_edit_grid_controls_reject_invalid_values_without_write(
@@ -1307,6 +1364,8 @@ def test_review_edit_keyboard_shortcuts_respect_text_input_arrow_guard(
     )
 
     mode = ReviewEditMode()
+    mode._request_canvas_render = lambda _composition: None  # noqa: SLF001
+    mode._request_target_preview = lambda _composition: None  # noqa: SLF001
     mode.load_workspace(
         service,
         targets=[target_config("alpha", sort_order=1, name="Alpha Target")],

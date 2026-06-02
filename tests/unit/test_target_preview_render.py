@@ -1,0 +1,105 @@
+from __future__ import annotations
+
+from datetime import date
+from pathlib import Path
+
+import numpy as np
+import pytest
+import rasterio
+from rasterio.transform import from_bounds
+
+from thucthengay.models import (
+    Composition,
+    GridConfig,
+    GridInterval,
+    ImageLayer,
+    TargetConfig,
+    TargetExportConfig,
+    ViewState,
+)
+from thucthengay.render import RenderSpecError, build_target_preview_spec
+
+
+def _write_raster(path: Path, bounds: tuple[float, float, float, float], fill: int) -> None:
+    width = 16
+    height = 16
+    data = np.full((3, height, width), fill, dtype=np.uint8)
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        width=width,
+        height=height,
+        count=3,
+        dtype="uint8",
+        crs="EPSG:4326",
+        transform=from_bounds(*bounds, width=width, height=height),
+    ) as dataset:
+        dataset.write(data)
+
+
+def _target() -> TargetConfig:
+    return TargetConfig(
+        id="alpha",
+        sort_order=1,
+        name="Alpha",
+        geojson_file="alpha.geojson",
+        coordinate=[106.7, 10.8],
+        scale=50000,
+        grid=GridConfig(interval=GridInterval(minutes=1)),
+        export=TargetExportConfig(template_metadata_file="alpha.template.json"),
+        metadata={"target_preview_background": "#112233"},
+    )
+
+
+def _composition(layers: list[ImageLayer]) -> Composition:
+    return Composition(
+        composition_id="alpha__20260525",
+        target_id="alpha",
+        capture_date=date(2026, 5, 25),
+        view=ViewState(center=[106.7, 10.8], scale=50000),
+        layers=layers,
+    )
+
+
+def test_target_preview_spec_covers_union_of_all_layers_even_when_hidden(
+    tmp_path: Path,
+) -> None:
+    first = tmp_path / "first.tif"
+    second = tmp_path / "second.tif"
+    _write_raster(first, (106.0, 10.0, 106.5, 10.5), fill=30)
+    _write_raster(second, (106.4, 10.4, 107.0, 11.0), fill=200)
+    composition = _composition(
+        [
+            ImageLayer(layer_id="first", source_path=str(first), visible=False, order=1),
+            ImageLayer(layer_id="second", source_path=str(second), visible=True, order=0),
+        ]
+    )
+
+    spec = build_target_preview_spec(
+        composition=composition,
+        target=_target(),
+        output_width=320,
+        output_height=180,
+    )
+
+    assert [layer.layer_id for layer in spec.visible_layers] == ["second", "first"]
+    assert spec.geo_window.min_lon <= 106.0
+    assert spec.geo_window.min_lat <= 10.0
+    assert spec.geo_window.max_lon >= 107.0
+    assert spec.geo_window.max_lat >= 11.0
+    assert spec.output_width <= 320
+    assert spec.output_height <= 180
+    assert spec.background.color == "#112233"
+
+
+def test_target_preview_spec_requires_at_least_one_layer() -> None:
+    with pytest.raises(RenderSpecError) as exc_info:
+        build_target_preview_spec(
+            composition=_composition([]),
+            target=_target(),
+            output_width=320,
+            output_height=180,
+        )
+
+    assert exc_info.value.issues[0].issue_id == "target_preview.no_layers"

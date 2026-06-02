@@ -40,6 +40,7 @@ class GisCanvasWidget(QGraphicsView):
     viewEditCompleted = Signal(object, int)
 
     DEFAULT_FRAME_ASPECT = 16 / 9
+    MAP_FRAME_FILL_RATIO = 0.90
     MIN_SCALE = 1000
     MAX_SCALE = 20_000_000
 
@@ -286,10 +287,10 @@ class GisCanvasWidget(QGraphicsView):
     def _frame_rect(self) -> QRectF:
         width = max(self.viewport().width(), 640)
         height = max(self.viewport().height(), 360)
-        frame_width = width * 0.72
+        frame_width = width * self.MAP_FRAME_FILL_RATIO
         frame_height = frame_width / self._frame_aspect
-        if frame_height > height * 0.72:
-            frame_height = height * 0.72
+        if frame_height > height * self.MAP_FRAME_FILL_RATIO:
+            frame_height = height * self.MAP_FRAME_FILL_RATIO
             frame_width = frame_height * self._frame_aspect
         x = (width - frame_width) / 2
         y = (height - frame_height) / 2

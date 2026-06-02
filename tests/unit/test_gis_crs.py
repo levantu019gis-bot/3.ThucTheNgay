@@ -13,6 +13,7 @@ from rasterio.transform import from_bounds
 
 from thucthengay.gis.crs import (
     GEOGRAPHIC_CRS,
+    dataset_geographic_bbox,
     geographic_window_to_raster_window,
     get_transformer,
     normalize_crs_key,
@@ -62,6 +63,26 @@ class TestTransformerCache:
         a = get_transformer("EPSG:4326", "EPSG:3857")
         b = get_transformer("EPSG:4326", "EPSG:3857")
         assert a is b
+
+
+class TestDatasetGeographicBbox:
+    def test_returns_bounds_for_geographic_dataset(self) -> None:
+        with _synthetic_dataset(
+            bounds=(106.0, 10.0, 107.0, 11.0), crs=GEOGRAPHIC_CRS
+        ) as ds:
+            assert dataset_geographic_bbox(ds) == pytest.approx((106.0, 10.0, 107.0, 11.0))
+
+    def test_reprojects_projected_bounds_to_wgs84(self) -> None:
+        forward = get_transformer(GEOGRAPHIC_CRS, "EPSG:3857")
+        x0, y0 = forward.transform(106.0, 10.0)
+        x1, y1 = forward.transform(107.0, 11.0)
+        with _synthetic_dataset(
+            bounds=(min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)),
+            crs="EPSG:3857",
+        ) as ds:
+            bbox = dataset_geographic_bbox(ds)
+
+        assert bbox == pytest.approx((106.0, 10.0, 107.0, 11.0), abs=0.01)
 
 
 class TestGeographicWindowToRasterWindowSameCrs:

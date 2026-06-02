@@ -5,6 +5,7 @@ from __future__ import annotations
 from PySide6.QtCore import QObject, Signal, Slot
 
 from thucthengay.jobs import PreviewRenderRequest, run_preview_render_job
+from thucthengay.jobs.render_job import RenderFunction
 
 
 class RenderWorker(QObject):
@@ -15,13 +16,19 @@ class RenderWorker(QObject):
     def __init__(
         self,
         request: PreviewRenderRequest,
+        *,
+        render: RenderFunction | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self._request = request
+        self._render = render
 
     @Slot()
     def run(self) -> None:
         """Worker entry point invoked by QThread."""
-        result = run_preview_render_job(self._request)
+        if self._render is None:
+            result = run_preview_render_job(self._request)
+        else:
+            result = run_preview_render_job(self._request, render=self._render)
         self.finished.emit(result)

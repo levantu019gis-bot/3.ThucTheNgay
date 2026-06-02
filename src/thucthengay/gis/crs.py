@@ -122,3 +122,16 @@ def geographic_window_to_raster_window(
         covered = (lon_min, lat_min, lon_max, lat_max)
 
     return WindowResolution(window=window, covered_bbox=covered)
+
+
+def dataset_geographic_bbox(dataset: rasterio.io.DatasetReader) -> Bbox:
+    """Return the dataset bounds as a WGS84 bbox without reading raster pixels."""
+    _ensure_north_up(dataset)
+    raster_crs = normalize_crs_key(dataset.crs)
+    bounds = dataset.bounds
+    bbox = (bounds.left, bounds.bottom, bounds.right, bounds.top)
+    if raster_crs == GEOGRAPHIC_CRS:
+        return bbox
+
+    transformer = get_transformer(raster_crs, GEOGRAPHIC_CRS)
+    return _reproject_bbox(bbox, transformer)

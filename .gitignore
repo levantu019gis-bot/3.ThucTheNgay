@@ -11,3 +11,5 @@ dist/
 workspace-output/
 exports/
 *.log
+
+*.tif

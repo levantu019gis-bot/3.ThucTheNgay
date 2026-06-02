@@ -22,6 +22,7 @@ from thucthengay.render.spec import (
     RenderSpecError,
     build_render_spec,
 )
+from thucthengay.render.target_preview import build_target_preview_spec
 
 __all__ = [
     "GeoWindow",
@@ -33,6 +34,7 @@ __all__ = [
     "RenderSpecError",
     "RasterRenderResult",
     "build_render_spec",
+    "build_target_preview_spec",
     "draw_coordinate_frame",
     "is_final_render_current",
     "render_final_png",

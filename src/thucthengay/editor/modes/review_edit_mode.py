@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from pydantic import ValidationError
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal, Slot
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -32,7 +34,8 @@ from thucthengay.editor.render_worker import RenderWorker
 from thucthengay.editor.widgets import (
     GisCanvasWidget,
     MetadataEditorDialog,
-    SlidePreviewWidget,
+    TargetPreviewRequestToken,
+    TargetPreviewWidget,
     WarningsPanelWidget,
     confirm_date_change_dialog,
 )
@@ -50,7 +53,9 @@ from thucthengay.models import (
     TargetConfig,
     TemplateMetadata,
 )
+from thucthengay.render.raster import render_raster_layers
 from thucthengay.render.spec import RenderSpecError, build_render_spec
+from thucthengay.render.target_preview import build_target_preview_spec
 from thucthengay.validation import (
     ValidationContext,
     ValidationResult,
@@ -74,6 +79,10 @@ class ReviewEditMode(QWidget):
         self._suppress_selection_validation = False
         self._render_thread: QThread | None = None
         self._render_worker: RenderWorker | None = None
+        self._render_token: object | None = None
+        self._target_render_thread: QThread | None = None
+        self._target_render_worker: RenderWorker | None = None
+        self._target_render_token: TargetPreviewRequestToken | None = None
 
         self.tree_model = CompositionTreeModel(self)
         self.tree_view = QTreeView()
@@ -173,8 +182,8 @@ class ReviewEditMode(QWidget):
         self.save_grid_button.setObjectName("reviewGridSave")
         self.save_grid_button.clicked.connect(self._save_grid_override)
 
-        self.slide_preview = SlidePreviewWidget()
-        self.preview_summary = self.slide_preview.status_label
+        self.target_preview = TargetPreviewWidget()
+        self.preview_summary = self.target_preview.status_label
 
         self.gis_canvas = GisCanvasWidget()
         self.gis_canvas.viewEditCompleted.connect(self._persist_canvas_view)
@@ -252,6 +261,11 @@ class ReviewEditMode(QWidget):
         self._refresh_filter_controls()
         self._restore_selection(selected_id)
 
+    def closeEvent(self, event) -> None:  # noqa: ANN001, N802
+        self._cancel_target_render()
+        self._cancel_render()
+        super().closeEvent(event)
+
     def _build_left_panel(self) -> QWidget:
         panel = QWidget()
         panel.setMinimumWidth(320)
@@ -264,7 +278,7 @@ class ReviewEditMode(QWidget):
         layout.addWidget(self.empty_state_label)
         layout.addWidget(self._build_layer_panel(), 2)
         layout.addWidget(self._build_grid_panel(), 1)
-        layout.addWidget(self._panel_frame("Slide preview", self.slide_preview), 1)
+        layout.addWidget(self._panel_frame("Target Preview", self.target_preview), 1)
         return panel
 
     def _filter_bar_layout(self) -> QHBoxLayout:
@@ -591,6 +605,9 @@ class ReviewEditMode(QWidget):
         if context.template_metadata is None:
             return
         render_composition = self._workspace_service.resolve_composition_layer_paths(composition)
+        if not _has_existing_visible_raster(render_composition):
+            self.gis_canvas.set_error("Không tìm thấy file raster visible để render canvas.")
+            return
         canvas_width = max(self.gis_canvas.viewport().width(), 640)
         canvas_height = max(self.gis_canvas.viewport().height(), 360)
         try:
@@ -611,12 +628,12 @@ class ReviewEditMode(QWidget):
             quality=PreviewRenderQuality.SETTLED_HIGH_RES,
             spec=spec,
         )
-        token = self.gis_canvas.set_loading("Đang render preview...")
+        self._render_token = self.gis_canvas.set_loading("Đang render preview...")
         thread = QThread(self)
         worker = RenderWorker(request)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
-        worker.finished.connect(lambda result: self._apply_canvas_render(result, token))
+        worker.finished.connect(self._handle_canvas_render_result)
         worker.finished.connect(thread.quit)
         worker.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
@@ -625,13 +642,87 @@ class ReviewEditMode(QWidget):
         self._render_worker = worker
         thread.start()
 
-    def _apply_canvas_render(
-        self, result: PreviewRenderJobResult, token: object
-    ) -> None:
+    def _request_target_preview(self, composition: Composition) -> None:
+        """Build a full-coverage target preview and render it in a background thread."""
+        self._cancel_target_render()
+        target = self._target_for_composition(composition)
+        if target is None or self._workspace_service is None:
+            return
+
+        render_composition = self._workspace_service.resolve_composition_layer_paths(composition)
+        context = self._validation_context_for(composition)
+        try:
+            spec = build_target_preview_spec(
+                composition=render_composition,
+                target=target,
+                template=context.template_metadata,
+                template_metadata_file=target.export.template_metadata_file,
+                output_width=self.target_preview.render_width(),
+                output_height=self.target_preview.render_height(),
+            )
+        except (RenderSpecError, ValidationError) as error:
+            token = self.target_preview.begin_render_request()
+            self.target_preview.set_error(token, str(error))
+            return
+
+        request = PreviewRenderRequest(
+            job_id=(
+                "target-preview:"
+                f"{composition.target_id}:{composition.capture_date.isoformat()}"
+            ),
+            composition_id=composition.composition_id,
+            revision=self.target_preview.generation,
+            quality=PreviewRenderQuality.SETTLED_HIGH_RES,
+            spec=spec,
+        )
+        self._target_render_token = self.target_preview.set_loading()
+        thread = QThread(self)
+        worker = RenderWorker(request, render=render_raster_layers)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._handle_target_preview_render_result)
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._clear_target_render_worker)
+        self._target_render_thread = thread
+        self._target_render_worker = worker
+        thread.start()
+
+    @Slot(object)
+    def _handle_canvas_render_result(self, result: PreviewRenderJobResult) -> None:
+        token = self._render_token
+        if token is None:
+            return
+        self._apply_canvas_render(result, token)
+
+    def _apply_canvas_render(self, result: PreviewRenderJobResult, token: object) -> None:
         if result.state in {JobState.SUCCESS, JobState.WARNING} and result.canvas is not None:
             self.gis_canvas.apply_render_result(token, result.message, canvas=result.canvas)
         elif result.state == JobState.ERROR:
             self.gis_canvas.set_error(result.message)
+
+    @Slot(object)
+    def _handle_target_preview_render_result(self, result: PreviewRenderJobResult) -> None:
+        token = self._target_render_token
+        if token is None:
+            return
+        self._apply_target_preview_render(result, token)
+
+    def _apply_target_preview_render(
+        self,
+        result: PreviewRenderJobResult,
+        token: TargetPreviewRequestToken,
+    ) -> None:
+        if result.state in {JobState.SUCCESS, JobState.WARNING} and result.canvas is not None:
+            self.target_preview.apply_render_result(
+                token,
+                result.message,
+                canvas=result.canvas,
+                issue_count=len(result.issues),
+            )
+        elif result.state == JobState.ERROR:
+            self.target_preview.set_error(token, result.message)
 
     def _cancel_render(self) -> None:
         if self._render_thread is not None and self._render_thread.isRunning():
@@ -639,10 +730,25 @@ class ReviewEditMode(QWidget):
             self._render_thread.wait(2000)
         self._render_thread = None
         self._render_worker = None
+        self._render_token = None
+
+    def _cancel_target_render(self) -> None:
+        if self._target_render_thread is not None and self._target_render_thread.isRunning():
+            self._target_render_thread.quit()
+            self._target_render_thread.wait(2000)
+        self._target_render_thread = None
+        self._target_render_worker = None
+        self._target_render_token = None
 
     def _clear_render_worker(self) -> None:
         self._render_thread = None
         self._render_worker = None
+        self._render_token = None
+
+    def _clear_target_render_worker(self) -> None:
+        self._target_render_thread = None
+        self._target_render_worker = None
+        self._target_render_token = None
 
     def _show_review_issues(
         self,
@@ -969,12 +1075,7 @@ class ReviewEditMode(QWidget):
         self.layer_model.set_composition(composition)
         self.layer_warning_label.setVisible(self.layer_model.has_no_visible_layers())
         self._update_metadata_edit_button()
-        effective_grid, _grid_source = self._effective_grid_for_composition(composition)
-        self.slide_preview.set_composition(
-            composition,
-            effective_grid=effective_grid,
-            background=self._preview_background_for_composition(composition),
-        )
+        target_preview_needs_render = self.target_preview.set_composition(composition)
         frame_aspect = self._frame_aspect_for_composition(composition)
         if frame_aspect is not None:
             self.gis_canvas.set_frame_aspect(frame_aspect)
@@ -986,6 +1087,8 @@ class ReviewEditMode(QWidget):
             target_id=composition.target_id,
         )
         self._update_review_action_state()
+        if target_preview_needs_render:
+            self._request_target_preview(composition)
         self._request_canvas_render(composition)
 
     def _frame_aspect_for_composition(self, composition: Composition) -> float | None:
@@ -1002,22 +1105,6 @@ class ReviewEditMode(QWidget):
                 if _is_positive_number(width) and _is_positive_number(height):
                     return float(width) / float(height)
         return None
-
-    def _preview_background_for_composition(self, composition: Composition) -> dict[str, object]:
-        for target in self._targets or []:
-            if target.id != composition.target_id:
-                continue
-            background = target.metadata.get("preview_background")
-            if isinstance(background, dict):
-                return dict(background)
-            map_background = target.metadata.get("map_background")
-            if isinstance(map_background, dict):
-                return dict(map_background)
-            if isinstance(map_background, str):
-                return {"color": map_background}
-            if isinstance(background, str):
-                return {"color": background}
-        return {}
 
     def _load_grid_controls(self, composition: Composition) -> None:
         grid, source = self._effective_grid_for_composition(composition)
@@ -1076,6 +1163,16 @@ class ReviewEditMode(QWidget):
 
 def _is_positive_number(value: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+
+
+def _has_existing_visible_raster(composition: Composition) -> bool:
+    for layer in composition.layers:
+        if not layer.visible:
+            continue
+        path = layer.cache_path or layer.source_path
+        if Path(path).exists():
+            return True
+    return False
 
 
 def _parse_non_negative_int(raw: str, label: str) -> int:
